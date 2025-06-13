@@ -1,17 +1,22 @@
 package io.matin.filedownloader.di
 
+import android.content.Context
 import com.google.gson.GsonBuilder
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import io.matin.filedownloader.network.DownloadService
-import io.matin.filedownloader.network.ProgressResponseBody
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
+import androidx.work.WorkManager
+import dagger.hilt.android.qualifiers.ApplicationContext
+import io.matin.filedownloader.filestorage.FileStorageHelper
+import io.matin.filedownloader.notifications.DownloadNotificationManager
+import io.matin.filedownloader.repo.FileDownloadRepository
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -30,21 +35,6 @@ class AppModule {
             .callTimeout(1000, TimeUnit.SECONDS)
             .connectTimeout(1000, TimeUnit.SECONDS)
             .readTimeout(1000, TimeUnit.SECONDS)
-
-        builder.addNetworkInterceptor { chain ->
-            val originalRequest = chain.request()
-            val response = chain.proceed(originalRequest)
-
-            val progressListener = originalRequest.tag(ProgressResponseBody.ProgressListener::class.java)
-
-            if (progressListener != null && response.body != null) {
-                response.newBuilder()
-                    .body(ProgressResponseBody(response.body!!, progressListener))
-                    .build()
-            } else {
-                response
-            }
-        }
         return builder.build()
     }
 
@@ -62,5 +52,42 @@ class AppModule {
     @Singleton
     fun providesDownloadService(retrofit: Retrofit): DownloadService {
         return retrofit.create(DownloadService::class.java)
+    }
+
+    // Provide Application Context - needed by DownloadNotificationManager and FileStorageHelper
+    @Provides
+    @Singleton
+    fun provideApplicationContext(@ApplicationContext context: Context): Context {
+        return context
+    }
+
+    // Provide WorkManager instance - needed by FileViewModel
+    @Provides
+    @Singleton
+    fun provideWorkManager(@ApplicationContext context: Context): WorkManager {
+        return WorkManager.getInstance(context)
+    }
+
+    // Add explicit provides for dependencies needed by DownloadWorker
+    // These will be injected into ApplicationWorkerFactory
+    @Provides
+    @Singleton
+    fun provideFileDownloadRepository(
+        downloadService: DownloadService,
+        okHttpClient: OkHttpClient
+    ): FileDownloadRepository {
+        return FileDownloadRepository(downloadService, okHttpClient)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDownloadNotificationManager(@ApplicationContext context: Context): DownloadNotificationManager {
+        return DownloadNotificationManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideFileStorageHelper(@ApplicationContext context: Context): FileStorageHelper {
+        return FileStorageHelper(context)
     }
 }

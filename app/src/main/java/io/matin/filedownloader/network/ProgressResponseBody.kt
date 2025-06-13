@@ -8,6 +8,7 @@ import okio.ForwardingSource
 import okio.Source
 import okio.buffer
 import java.io.IOException
+import android.util.Log
 
 class ProgressResponseBody(
     private val responseBody: ResponseBody,
@@ -17,7 +18,7 @@ class ProgressResponseBody(
     private var bufferedSource: BufferedSource? = null
 
     interface ProgressListener {
-        fun update(bytesRead: Long, contentLength: Long, done: Boolean)
+        fun update(bytesRead: Long, contentLength: Long, done: Boolean, percentage: Int)
     }
 
     override fun contentType(): MediaType? {
@@ -38,7 +39,6 @@ class ProgressResponseBody(
     private fun source(source: Source): Source {
         return object : ForwardingSource(source) {
             var totalBytesRead = 0L
-            var lastReportedProgress = -1
 
             @Throws(IOException::class)
             override fun read(sink: Buffer, byteCount: Long): Long {
@@ -48,15 +48,20 @@ class ProgressResponseBody(
 
                 val contentLength = responseBody.contentLength()
 
-                if (contentLength > 0) {
-                    val currentProgress = ((totalBytesRead.toFloat() / contentLength) * 100).toInt()
-                    if (currentProgress != lastReportedProgress || bytesRead == -1L) {
-                        lastReportedProgress = currentProgress
-                        progressListener.update(totalBytesRead, contentLength, bytesRead == -1L)
-                    }
-                } else if (bytesRead == -1L) {
-                    progressListener.update(totalBytesRead, contentLength, true)
+                val currentPercentage = if (contentLength > 0) {
+                    ((totalBytesRead.toFloat() / contentLength) * 100).toInt().coerceIn(0, 100)
+                } else {
+                    0
                 }
+
+                Log.d("ProgressResponseBody", "read: totalBytesRead=$totalBytesRead, contentLength=$contentLength, currentPercentage=$currentPercentage, bytesRead=$bytesRead")
+
+                if (bytesRead != -1L) {
+                    progressListener.update(totalBytesRead, contentLength, false, currentPercentage)
+                } else {
+                    progressListener.update(totalBytesRead, contentLength, true, 100)
+                }
+
                 return bytesRead
             }
         }

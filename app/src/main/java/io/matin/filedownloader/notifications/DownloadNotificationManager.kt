@@ -11,7 +11,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.annotation.RequiresPermission
 import android.Manifest
-import dagger.hilt.android.qualifiers.ApplicationContext
 import io.matin.filedownloader.MainActivity
 import io.matin.filedownloader.R
 import javax.inject.Inject
@@ -19,12 +18,12 @@ import javax.inject.Singleton
 
 @Singleton
 class DownloadNotificationManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    private val context: Context
 ) {
 
     companion object {
-        const val DOWNLOAD_CHANNEL_ID = "file_download_channel"
-        const val DOWNLOAD_CHANNEL_NAME = "File Downloads"
+        const val DOWNLOAD_CHANNEL_ID = "file_download_channel_workmanager"
+        const val DOWNLOAD_CHANNEL_NAME = "File Downloads (Background)"
         const val DOWNLOAD_NOTIFICATION_ID = 1001
     }
 
@@ -41,7 +40,7 @@ class DownloadNotificationManager @Inject constructor(
                 DOWNLOAD_CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Notifications for ongoing and completed file downloads."
+                description = "Notifications for background file download progress and status."
                 setSound(null, null)
                 enableVibration(false)
             }
@@ -50,7 +49,7 @@ class DownloadNotificationManager @Inject constructor(
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
-    fun showProgressNotification(fileName: String, progress: Int) {
+    fun buildInitialProgressNotification(fileName: String, progress: Int): Notification {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -58,8 +57,8 @@ class DownloadNotificationManager @Inject constructor(
             context, 0, intent, PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Placeholder: Use your app's actual icon
+        return NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Downloading: $fileName")
             .setContentText("$progress% complete")
             .setProgress(100, progress, false)
@@ -67,8 +66,13 @@ class DownloadNotificationManager @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
+            .build()
+    }
 
-        notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, builder.build())
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
+    fun showProgressNotification(fileName: String, progress: Int) {
+        val notification = buildInitialProgressNotification(fileName, progress)
+        notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, notification)
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -81,7 +85,7 @@ class DownloadNotificationManager @Inject constructor(
         )
 
         val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Placeholder: Use your app's actual icon
+            .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Download Complete: $fileName")
             .setContentText("File saved successfully.")
             .setProgress(0, 0, false)
@@ -103,7 +107,7 @@ class DownloadNotificationManager @Inject constructor(
         )
 
         val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Placeholder: Use your app's actual icon
+            .setSmallIcon(R.drawable.ic_launcher)
             .setContentTitle("Download Failed: $fileName")
             .setContentText("Error: ${errorMessage ?: "Unknown"}")
             .setProgress(0, 0, false)

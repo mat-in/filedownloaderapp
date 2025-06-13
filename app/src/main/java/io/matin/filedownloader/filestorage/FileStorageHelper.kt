@@ -28,10 +28,16 @@ class FileStorageHelper @Inject constructor(
             val contentValues = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType ?: "application/octet-stream")
-
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + File.separator + "MyFileDownloads")
-
-                put(MediaStore.MediaColumns.IS_PENDING, 1)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + File.separator + "MyFileDownloads")
+                } else {
+                    val appSpecificExternalDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                    val targetFile = File(appSpecificExternalDir, "MyFileDownloads" + File.separator + fileName)
+                    put(MediaStore.MediaColumns.DATA, targetFile.absolutePath)
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
             }
 
             val resolver = context.contentResolver
@@ -51,9 +57,11 @@ class FileStorageHelper @Inject constructor(
                         }
                     }
 
-                    contentValues.clear()
-                    contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                    resolver.update(fileUri, contentValues, null, null)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        contentValues.clear()
+                        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        resolver.update(fileUri, contentValues, null, null)
+                    }
 
                     Log.d(TAG, "File saved to MediaStore URI: $fileUri")
                     fileUri
@@ -62,7 +70,7 @@ class FileStorageHelper @Inject constructor(
                     null
                 }
             } catch (e: Exception) {
-                uri?.let { resolver.delete(it, null, null) } // Clean up incomplete file
+                uri?.let { resolver.delete(it, null, null) }
                 Log.e(TAG, "Error saving file to MediaStore: ${e.message}", e)
                 null
             }
