@@ -71,4 +71,10 @@ dependencies {
     implementation ("com.google.android.material:material:1.12.0")
     implementation ("androidx.activity:activity-ktx:1.10.1")
     implementation ("androidx.constraintlayout:constraintlayout:2.1.4")
+
+    //RoomDB
+    val room_version = "2.7.1"
+
+    implementation("androidx.room:room-runtime:$room_version")
+    kapt("androidx.room:room-compiler:$room_version")
 }

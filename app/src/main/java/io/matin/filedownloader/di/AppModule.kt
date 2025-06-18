@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.matin.filedownloader.data.AppDatabase
+import io.matin.filedownloader.data.DownloadDao
 import io.matin.filedownloader.filestorage.FileStorageHelper
 import io.matin.filedownloader.notifications.DownloadNotificationManager
 import io.matin.filedownloader.repo.FileDownloadRepository
@@ -68,8 +70,6 @@ class AppModule {
         return WorkManager.getInstance(context)
     }
 
-    // Add explicit provides for dependencies needed by DownloadWorker
-    // These will be injected into ApplicationWorkerFactory
     @Provides
     @Singleton
     fun provideFileDownloadRepository(
@@ -89,5 +89,17 @@ class AppModule {
     @Singleton
     fun provideFileStorageHelper(@ApplicationContext context: Context): FileStorageHelper {
         return FileStorageHelper(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
+        return AppDatabase.getDatabase(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideDownloadDao(appDatabase: AppDatabase): DownloadDao {
+        return appDatabase.downloadDao()
     }
 }

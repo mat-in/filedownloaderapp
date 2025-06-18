@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -41,5 +42,41 @@
         android:textSize="18sp"
         android:textStyle="bold"
         android:layout_marginTop="24dp"/>
+
+    <TextView
+        android:id="@+id/totalStorageTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Total Storage: Calculating..."
+        android:textAlignment="center"
+        android:textSize="14sp"
+        android:layout_marginTop="8dp"/>
+
+    <TextView
+        android:id="@+id/freeSpaceTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Free Space: Calculating..."
+        android:textAlignment="center"
+        android:textSize="14sp"
+        android:layout_marginTop="4dp"/>
+
+    <TextView
+        android:id="@+id/batteryPercentageTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Battery: --%"
+        android:textAlignment="center"
+        android:textSize="14sp"
+        android:layout_marginTop="8dp"/>
+
+    <TextView
+        android:id="@+id/chargingStatusTextView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Charging: Unknown"
+        android:textAlignment="center"
+        android:textSize="14sp"
+        android:layout_marginTop="4dp"/>
 
 </LinearLayout>

@@ -1,7 +1,10 @@
 package io.matin.filedownloader
 
 import android.Manifest
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -22,15 +25,23 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.matin.filedownloader.viewmodel.FileViewModel
 import kotlinx.coroutines.launch
 import java.net.URL
+import io.matin.filedownloader.utils.StorageUtils
+import io.matin.filedownloader.receivers.BatteryInfoReceiver
 
 @AndroidEntryPoint
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListener {
 
     private lateinit var urlEditText: EditText
     private lateinit var downloadButton: Button
     private lateinit var statusTextView: TextView
+    private lateinit var totalStorageTextView: TextView
+    private lateinit var freeSpaceTextView: TextView
+    private lateinit var batteryPercentageTextView: TextView
+    private lateinit var chargingStatusTextView: TextView
 
     private val fileViewModel: FileViewModel by viewModels()
+
+    private lateinit var batteryInfoReceiver: BatteryInfoReceiver
 
     private val requestStoragePermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -69,6 +80,10 @@ class MainActivity : AppCompatActivity() {
         urlEditText = findViewById(R.id.urlEditText)
         downloadButton = findViewById(R.id.downloadButton)
         statusTextView = findViewById(R.id.statusTextView)
+        totalStorageTextView = findViewById(R.id.totalStorageTextView)
+        freeSpaceTextView = findViewById(R.id.freeSpaceTextView)
+        batteryPercentageTextView = findViewById(R.id.batteryPercentageTextView)
+        chargingStatusTextView = findViewById(R.id.chargingStatusTextView)
 
         urlEditText.setText("https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4")
 
@@ -107,6 +122,7 @@ class MainActivity : AppCompatActivity() {
                         }
                         FileViewModel.DownloadStatus.Completed -> {
                             statusTextView.text = "Download successful!"
+                            updateStorageInfo()
                         }
                         is FileViewModel.DownloadStatus.Failed -> {
                             statusTextView.text = "Download failed: ${status.message ?: "Unknown error"}"
@@ -116,6 +132,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+
+        updateStorageInfo()
+
+        batteryInfoReceiver = BatteryInfoReceiver(this)
+        val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        registerReceiver(batteryInfoReceiver, iFilter)
+
+        val batteryStatus: Intent? = registerReceiver(null, iFilter)
+        updateBatteryInfo(batteryStatus)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(batteryInfoReceiver)
     }
 
     private fun checkStoragePermissionAndInitiateDownload() {
@@ -157,5 +187,32 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             "downloaded_file_${System.currentTimeMillis()}.bin"
         }
+    }
+
+    private fun updateStorageInfo() {
+        val (totalInternal, freeInternal) = StorageUtils.getInternalStorageInfo()
+        totalStorageTextView.text = "Total Internal Storage: ${StorageUtils.formatFileSize(totalInternal)}"
+        freeSpaceTextView.text = "Free Internal Space: ${StorageUtils.formatFileSize(freeInternal)}"
+    }
+
+
+    override fun onBatteryInfoUpdated(percentage: Int, isCharging: Boolean) {
+        batteryPercentageTextView.text = "Battery: $percentage%"
+        chargingStatusTextView.text = "Charging: ${if (isCharging) "Yes" else "No"}"
+    }
+
+
+    private fun updateBatteryInfo(batteryStatus: Intent?) {
+        if (batteryStatus == null) return
+
+        val level: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        val batteryPct: Int = if (scale > 0) (level * 100 / scale.toFloat()).toInt() else 0
+
+        val status: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+
+        onBatteryInfoUpdated(batteryPct, isCharging)
     }
 }

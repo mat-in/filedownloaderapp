@@ -19,15 +19,16 @@ import kotlinx.coroutines.launch
 import okhttp3.ResponseBody
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import io.matin.filedownloader.data.DownloadEntry
+import io.matin.filedownloader.data.DownloadDao
 
-// Removed @HiltWorker and @AssistedInject
 class DownloadWorker constructor(
     private val appContext: Context,
     workerParams: WorkerParameters,
-    // Dependencies are now passed directly by our custom factory
     private val fileDownloadRepository: FileDownloadRepository,
     private val notificationManager: DownloadNotificationManager,
-    private val fileStorageHelper: FileStorageHelper
+    private val fileStorageHelper: FileStorageHelper,
+    private val downloadDao: DownloadDao
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
@@ -65,17 +66,19 @@ class DownloadWorker constructor(
         setForeground(getForegroundInfo())
 
         var downloadSuccess = false
+        var totalDownloadedSize: Long = 0
+        val startTime = System.currentTimeMillis()
+
         try {
             val progressListener = object : ProgressResponseBody.ProgressListener {
                 @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
                 override fun update(bytesRead: Long, contentLength: Long, done: Boolean, percentage: Int) {
+
+                    totalDownloadedSize = bytesRead
                     val currentFivePercentBlock = percentage / 5 * 5
 
-                    // Launch a new coroutine because `update` is called from OkHttp's I/O thread,
-                    // and `setProgress` and `setForeground` are suspend functions.
                     CoroutineScope(Dispatchers.Default).launch {
                         runCatching {
-                            // Corrected typo: lastFivePercentBlockReported -> lastReportedFivePercent
                             if (currentFivePercentBlock > (lastReportedFivePercent ?: -1) || (percentage == 100 && (lastReportedFivePercent ?: -1) != 100)) {
                                 Log.d(TAG, "Reporting progress: $currentFivePercentBlock%")
                                 notificationManager.showProgressNotification(fileName, currentFivePercentBlock)
@@ -96,7 +99,7 @@ class DownloadWorker constructor(
                     }
                 }
             }
-            lastReportedFivePercent = null // Reset for this worker instance
+            lastReportedFivePercent = null
 
             val rawResponseBody: ResponseBody = fileDownloadRepository.downloadFile(fileUrl)
             val progressTrackingResponseBody = ProgressResponseBody(rawResponseBody, progressListener)
@@ -104,6 +107,21 @@ class DownloadWorker constructor(
             val savedUri = fileStorageHelper.saveFileToMediaStore(progressTrackingResponseBody, fileName)
 
             downloadSuccess = (savedUri != null)
+
+
+            if (downloadSuccess) {
+                val endTime = System.currentTimeMillis()
+                val downloadDuration = endTime - startTime
+
+                val downloadEntry = DownloadEntry(
+                    fileName = fileName,
+                    fileUrl = fileUrl,
+                    totalSize = totalDownloadedSize,
+                    downloadTimeMillis = downloadDuration
+                )
+                downloadDao.insertDownload(downloadEntry)
+                Log.d(TAG, "Download metrics saved to DB: $downloadEntry")
+            }
 
         } catch (e: Exception) {
             Log.e(TAG, "Download failed for $fileUrl: ${e.message}", e)
@@ -114,6 +132,7 @@ class DownloadWorker constructor(
         if (downloadSuccess) {
             Log.d(TAG, "Download and save successful for $fileName")
             notificationManager.showDownloadComplete(fileName)
+            // You might want to pass the actual file_uri if savedUri is converted to a string
             return Result.success(workDataOf("file_name" to fileName, "file_uri" to "TODO_URI"))
         } else {
             Log.e(TAG, "File saving failed for $fileName")
@@ -126,7 +145,7 @@ class DownloadWorker constructor(
     private var lastReportedFivePercent: Int? = null
 
 
-    // Helper function to extract a suitable filename from a URL
+
     private fun getFileNameFromUrl(url: String): String {
         return try {
             val path = URL(url).path
