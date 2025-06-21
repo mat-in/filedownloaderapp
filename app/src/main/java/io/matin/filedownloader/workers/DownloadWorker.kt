@@ -21,9 +21,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import io.matin.filedownloader.data.DownloadEntry
 import io.matin.filedownloader.data.DownloadDao
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 
-class DownloadWorker constructor(
-    private val appContext: Context,
+class DownloadWorker(
+    appContext: Context,
     workerParams: WorkerParameters,
     private val fileDownloadRepository: FileDownloadRepository,
     private val notificationManager: DownloadNotificationManager,
@@ -37,10 +40,15 @@ class DownloadWorker constructor(
         private const val TAG = "DownloadWorker"
     }
 
+    @Volatile
+    private var lastReportedFivePercent: Int? = null
+
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     override suspend fun getForegroundInfo(): ForegroundInfo {
         val fileName = inputData.getString(KEY_FILE_NAME) ?: "Unknown File"
-        val notification = notificationManager.buildInitialProgressNotification(fileName, 0)
+        // Ensure initial progress is correctly set for the foreground notification
+        val initialProgress = lastReportedFivePercent ?: 0
+        val notification = notificationManager.buildInitialProgressNotification(fileName, initialProgress)
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(
@@ -63,6 +71,10 @@ class DownloadWorker constructor(
 
         Log.d(TAG, "Starting download for $fileUrl with filename $fileName")
 
+
+        lastReportedFivePercent = null
+
+
         setForeground(getForegroundInfo())
 
         var downloadSuccess = false
@@ -73,41 +85,58 @@ class DownloadWorker constructor(
             val progressListener = object : ProgressResponseBody.ProgressListener {
                 @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
                 override fun update(bytesRead: Long, contentLength: Long, done: Boolean, percentage: Int) {
-
                     totalDownloadedSize = bytesRead
+
+
+                    coroutineContext.ensureActive()
+
                     val currentFivePercentBlock = percentage / 5 * 5
+
 
                     CoroutineScope(Dispatchers.Default).launch {
                         runCatching {
                             if (currentFivePercentBlock > (lastReportedFivePercent ?: -1) || (percentage == 100 && (lastReportedFivePercent ?: -1) != 100)) {
                                 Log.d(TAG, "Reporting progress: $currentFivePercentBlock%")
+
                                 notificationManager.showProgressNotification(fileName, currentFivePercentBlock)
 
                                 val progressData = workDataOf("progress" to currentFivePercentBlock)
-                                setProgress(progressData)
 
-                                setForeground(ForegroundInfo(
-                                    DownloadNotificationManager.DOWNLOAD_NOTIFICATION_ID,
-                                    notificationManager.buildInitialProgressNotification(fileName, currentFivePercentBlock),
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
-                                ))
+                                this@DownloadWorker.setProgress(progressData)
+
+
                                 lastReportedFivePercent = currentFivePercentBlock
                             }
                         }.onFailure { e ->
-                            Log.e(TAG, "Error updating progress: ${e.message}", e)
+                            Log.e(TAG, "Error updating progress or notification: ${e.message}", e)
                         }
                     }
                 }
             }
-            lastReportedFivePercent = null
 
-            val rawResponseBody: ResponseBody = fileDownloadRepository.downloadFile(fileUrl)
+
+            val response = withContext(Dispatchers.IO) {
+                fileDownloadRepository.downloadFile(fileUrl)
+            }
+
+            if (!response.isSuccessful) {
+                val errorMessage = "Download failed: HTTP ${response.code} ${response.message}"
+                Log.e(TAG, errorMessage)
+                notificationManager.showDownloadFailed(fileName, errorMessage)
+                return Result.failure(workDataOf("error_message" to errorMessage))
+            }
+
+            val rawResponseBody: ResponseBody = response.body
+                ?: throw java.io.IOException("Response body is null for URL: $fileUrl")
+
             val progressTrackingResponseBody = ProgressResponseBody(rawResponseBody, progressListener)
 
-            val savedUri = fileStorageHelper.saveFileToMediaStore(progressTrackingResponseBody, fileName)
+
+            val savedUri = withContext(Dispatchers.IO) {
+                fileStorageHelper.saveFileToMediaStore(progressTrackingResponseBody, fileName)
+            }
 
             downloadSuccess = (savedUri != null)
-
 
             if (downloadSuccess) {
                 val endTime = System.currentTimeMillis()
@@ -119,7 +148,10 @@ class DownloadWorker constructor(
                     totalSize = totalDownloadedSize,
                     downloadTimeMillis = downloadDuration
                 )
-                downloadDao.insertDownload(downloadEntry)
+
+                withContext(Dispatchers.IO) {
+                    downloadDao.insertDownload(downloadEntry)
+                }
                 Log.d(TAG, "Download metrics saved to DB: $downloadEntry")
             }
 
@@ -127,24 +159,23 @@ class DownloadWorker constructor(
             Log.e(TAG, "Download failed for $fileUrl: ${e.message}", e)
             notificationManager.showDownloadFailed(fileName, e.message ?: "Unknown error")
             return Result.failure(workDataOf("error_message" to e.message))
+        } finally {
+
+            if (downloadSuccess) {
+                notificationManager.showDownloadComplete(fileName)
+            } else {
+                notificationManager.cancelNotification()
+            }
         }
 
         if (downloadSuccess) {
             Log.d(TAG, "Download and save successful for $fileName")
-            notificationManager.showDownloadComplete(fileName)
-            // You might want to pass the actual file_uri if savedUri is converted to a string
             return Result.success(workDataOf("file_name" to fileName, "file_uri" to "TODO_URI"))
         } else {
             Log.e(TAG, "File saving failed for $fileName")
-            notificationManager.showDownloadFailed(fileName, "File saving failed.")
             return Result.failure(workDataOf("error_message" to "File saving failed"))
         }
     }
-
-    @Volatile
-    private var lastReportedFivePercent: Int? = null
-
-
 
     private fun getFileNameFromUrl(url: String): String {
         return try {

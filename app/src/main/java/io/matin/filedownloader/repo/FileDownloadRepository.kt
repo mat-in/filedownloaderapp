@@ -1,17 +1,23 @@
+// package io.matin.filedownloader.repo
+
 package io.matin.filedownloader.repo
 
-import io.matin.filedownloader.network.DownloadService
-import okhttp3.ResponseBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
-import okhttp3.OkHttpClient
 
 @Singleton
 class FileDownloadRepository @Inject constructor(
-    private val downloadService: DownloadService,
     private val okHttpClient: OkHttpClient
 ) {
-    suspend fun downloadFile(url: String): ResponseBody {
-        return downloadService.downloadFile(url)
+    @Throws(IOException::class)
+    fun downloadFile(url: String): Response {
+        val request = Request.Builder()
+            .url(url)
+            .build()
+        return okHttpClient.newCall(request).execute()
     }
 }

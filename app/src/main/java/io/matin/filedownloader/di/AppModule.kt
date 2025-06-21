@@ -1,3 +1,6 @@
+// package io.matin.filedownloader.di
+// (No changes to imports for other modules)
+
 package io.matin.filedownloader.di
 
 import android.content.Context
@@ -6,10 +9,8 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import io.matin.filedownloader.network.DownloadService
 import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.converter.gson.GsonConverterFactory // This will be removed, but keeping for comparison
 import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 import androidx.work.WorkManager
@@ -26,12 +27,6 @@ class AppModule {
 
     @Provides
     @Singleton
-    fun providesBaseUrl(): String {
-        return "http://localhost/"
-    }
-
-    @Provides
-    @Singleton
     fun providesOkHttpClient(): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .callTimeout(1000, TimeUnit.SECONDS)
@@ -40,30 +35,14 @@ class AppModule {
         return builder.build()
     }
 
-    @Provides
-    @Singleton
-    fun providesRetrofit(baseUrl: String, okHttpClient: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create(GsonBuilder().create()))
-            .build()
-    }
 
-    @Provides
-    @Singleton
-    fun providesDownloadService(retrofit: Retrofit): DownloadService {
-        return retrofit.create(DownloadService::class.java)
-    }
-
-    // Provide Application Context - needed by DownloadNotificationManager and FileStorageHelper
     @Provides
     @Singleton
     fun provideApplicationContext(@ApplicationContext context: Context): Context {
         return context
     }
 
-    // Provide WorkManager instance - needed by FileViewModel
+
     @Provides
     @Singleton
     fun provideWorkManager(@ApplicationContext context: Context): WorkManager {
@@ -73,10 +52,9 @@ class AppModule {
     @Provides
     @Singleton
     fun provideFileDownloadRepository(
-        downloadService: DownloadService,
         okHttpClient: OkHttpClient
     ): FileDownloadRepository {
-        return FileDownloadRepository(downloadService, okHttpClient)
+        return FileDownloadRepository(okHttpClient)
     }
 
     @Provides

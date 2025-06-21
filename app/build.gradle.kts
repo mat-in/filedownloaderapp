@@ -49,12 +49,10 @@ dependencies {
     // Android Lifecycle & ViewModel
     implementation ("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.1")
     implementation ("androidx.lifecycle:lifecycle-runtime-ktx:2.9.1")
-    implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.9.1") // Required for .asFlow() conversion
+    implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.9.1")
 
 
-    // Retrofit & OkHttp for networking
-    implementation ("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation ("com.squareup.retrofit2:converter-gson:2.11.0")
+    // OkHttp for networking
     implementation ("com.squareup.okhttp3:okhttp:4.12.0")
     implementation ("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
@@ -74,7 +72,6 @@ dependencies {
 
     //RoomDB
     val room_version = "2.7.1"
-
     implementation("androidx.room:room-runtime:$room_version")
     kapt("androidx.room:room-compiler:$room_version")
 }

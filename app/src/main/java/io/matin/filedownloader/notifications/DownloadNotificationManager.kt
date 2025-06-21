@@ -11,8 +11,10 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.annotation.RequiresPermission
 import android.Manifest
+import android.util.Log // Import Log
 import io.matin.filedownloader.MainActivity
-import io.matin.filedownloader.R
+import io.matin.filedownloader.R // Keep R import if you use other resources
+
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -25,6 +27,7 @@ class DownloadNotificationManager @Inject constructor(
         const val DOWNLOAD_CHANNEL_ID = "file_download_channel_workmanager"
         const val DOWNLOAD_CHANNEL_NAME = "File Downloads (Background)"
         const val DOWNLOAD_NOTIFICATION_ID = 1001
+        private const val TAG = "DownloadNotifManager"
     }
 
     private val notificationManager: NotificationManagerCompat = NotificationManagerCompat.from(context)
@@ -45,6 +48,7 @@ class DownloadNotificationManager @Inject constructor(
                 enableVibration(false)
             }
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            Log.d(TAG, "Notification channel created: $DOWNLOAD_CHANNEL_ID")
         }
     }
 
@@ -57,8 +61,8 @@ class DownloadNotificationManager @Inject constructor(
             context, 0, intent, PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+        val notification = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle("Downloading: $fileName")
             .setContentText("$progress% complete")
             .setProgress(100, progress, false)
@@ -67,12 +71,15 @@ class DownloadNotificationManager @Inject constructor(
             .setContentIntent(pendingIntent)
             .setOnlyAlertOnce(true)
             .build()
+        Log.d(TAG, "Built initial progress notification for $fileName at $progress%")
+        return notification
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     fun showProgressNotification(fileName: String, progress: Int) {
         val notification = buildInitialProgressNotification(fileName, progress)
         notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, notification)
+        Log.d(TAG, "Showing progress notification for $fileName at $progress%")
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -85,16 +92,17 @@ class DownloadNotificationManager @Inject constructor(
         )
 
         val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Download Complete: $fileName")
             .setContentText("File saved successfully.")
             .setProgress(0, 0, false)
             .setOngoing(false)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
 
         notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, builder.build())
+        Log.d(TAG, "Showing download complete notification for $fileName")
     }
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -107,19 +115,21 @@ class DownloadNotificationManager @Inject constructor(
         )
 
         val builder = NotificationCompat.Builder(context, DOWNLOAD_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setContentTitle("Download Failed: $fileName")
             .setContentText("Error: ${errorMessage ?: "Unknown"}")
             .setProgress(0, 0, false)
             .setOngoing(false)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
 
         notificationManager.notify(DOWNLOAD_NOTIFICATION_ID, builder.build())
+        Log.d(TAG, "Showing download failed notification for $fileName")
     }
 
     fun cancelNotification() {
         notificationManager.cancel(DOWNLOAD_NOTIFICATION_ID)
+        Log.d(TAG, "Cancelled notification with ID: $DOWNLOAD_NOTIFICATION_ID")
     }
 }
