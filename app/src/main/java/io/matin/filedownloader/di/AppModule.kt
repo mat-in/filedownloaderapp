@@ -4,22 +4,22 @@
 package io.matin.filedownloader.di
 
 import android.content.Context
+import androidx.work.WorkManager
+import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
-import dagger.hilt.components.SingletonComponent
-import okhttp3.OkHttpClient
-import retrofit2.converter.gson.GsonConverterFactory // This will be removed, but keeping for comparison
-import java.util.concurrent.TimeUnit
-import javax.inject.Singleton
-import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
 import io.matin.filedownloader.data.AppDatabase
 import io.matin.filedownloader.data.DownloadDao
 import io.matin.filedownloader.filestorage.FileStorageHelper
 import io.matin.filedownloader.notifications.DownloadNotificationManager
 import io.matin.filedownloader.repo.FileDownloadRepository
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
+import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -35,7 +35,11 @@ class AppModule {
         return builder.build()
     }
 
-
+    @Provides
+    @Singleton
+    fun provideGson(): Gson {
+        return GsonBuilder().create()
+    }
     @Provides
     @Singleton
     fun provideApplicationContext(@ApplicationContext context: Context): Context {
@@ -52,9 +56,10 @@ class AppModule {
     @Provides
     @Singleton
     fun provideFileDownloadRepository(
-        okHttpClient: OkHttpClient
+        okHttpClient: OkHttpClient,
+        gson: Gson
     ): FileDownloadRepository {
-        return FileDownloadRepository(okHttpClient)
+        return FileDownloadRepository(okHttpClient, gson)
     }
 
     @Provides

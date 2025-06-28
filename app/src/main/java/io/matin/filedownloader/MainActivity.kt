@@ -1,218 +1,224 @@
-    package io.matin.filedownloader
+package io.matin.filedownloader
 
-    import android.Manifest
-    import android.content.Intent
-    import android.content.IntentFilter
-    import android.content.pm.PackageManager
-    import android.os.BatteryManager
-    import android.os.Build
-    import android.os.Bundle
-    import android.util.Log
-    import android.widget.Button
-    import android.widget.EditText
-    import android.widget.TextView
-    import androidx.activity.enableEdgeToEdge
-    import androidx.activity.result.contract.ActivityResultContracts
-    import androidx.activity.viewModels
-    import androidx.appcompat.app.AppCompatActivity
-    import androidx.core.content.ContextCompat
-    import androidx.core.view.ViewCompat
-    import androidx.core.view.WindowInsetsCompat
-    import androidx.lifecycle.Lifecycle
-    import androidx.lifecycle.lifecycleScope
-    import androidx.lifecycle.repeatOnLifecycle
-    import dagger.hilt.android.AndroidEntryPoint
-    import io.matin.filedownloader.viewmodel.FileViewModel
-    import kotlinx.coroutines.launch
-    import java.net.URL
-    import io.matin.filedownloader.utils.StorageUtils
-    import io.matin.filedownloader.receivers.BatteryInfoReceiver
+import android.Manifest
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.os.BatteryManager
+import android.os.Build
+import android.os.Bundle
+import android.util.Log
+import android.widget.Button
+import android.widget.TextView
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import dagger.hilt.android.AndroidEntryPoint
+import io.matin.filedownloader.viewmodel.FileViewModel
+import kotlinx.coroutines.launch
+import io.matin.filedownloader.utils.StorageUtils
+import io.matin.filedownloader.receivers.BatteryInfoReceiver
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
-    @AndroidEntryPoint
-    class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListener {
+@AndroidEntryPoint
+class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListener {
 
-        private lateinit var urlEditText: EditText
-        private lateinit var downloadButton: Button
-        private lateinit var statusTextView: TextView
-        private lateinit var totalStorageTextView: TextView
-        private lateinit var freeSpaceTextView: TextView
-        private lateinit var batteryPercentageTextView: TextView
-        private lateinit var chargingStatusTextView: TextView
+    private lateinit var downloadButton: Button
+    private lateinit var statusTextView: TextView
+    private lateinit var totalStorageTextView: TextView
+    private lateinit var freeSpaceTextView: TextView
+    private lateinit var batteryPercentageTextView: TextView
+    private lateinit var chargingStatusTextView: TextView
+    private lateinit var powerConsumptionTextView: TextView
 
-        private val fileViewModel: FileViewModel by viewModels()
+    private val fileViewModel: FileViewModel by viewModels()
 
-        private lateinit var batteryInfoReceiver: BatteryInfoReceiver
+    private lateinit var batteryInfoReceiver: BatteryInfoReceiver
 
-        private val requestStoragePermissionLauncher = registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted: Boolean ->
-            if (isGranted) {
-                initiateDownload()
-            } else {
-                statusTextView.text = "Storage permission denied. Cannot save file."
-                Log.w("MainActivity", "Storage permission denied by user.")
-            }
+    private val requestStoragePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            CoroutineScope(Dispatchers.IO).launch{ initiateDownloadProcess() }
+        } else {
+            statusTextView.text = "Storage permission denied. Cannot save file."
+            Log.w("MainActivity", "Storage permission denied by user.")
+        }
+    }
+
+    private val requestNotificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            checkStoragePermissionAndInitiateDownloadProcess()
+        } else {
+            statusTextView.text = "Notification permission denied. Download will proceed without notification."
+            Log.w("MainActivity", "Notification permission denied by user, notifications will not be shown.")
+            checkStoragePermissionAndInitiateDownloadProcess()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContentView(R.layout.activity_main)
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
+            insets
         }
 
-        private val requestNotificationPermissionLauncher = registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { isGranted: Boolean ->
-            if (isGranted) {
-                checkStoragePermissionAndInitiateDownload()
-            } else {
-                statusTextView.text = "Notification permission denied. Download will proceed without notification."
-                Log.w("MainActivity", "Notification permission denied by user, notifications will not be shown.")
-                checkStoragePermissionAndInitiateDownload()
-            }
-        }
+        downloadButton = findViewById(R.id.downloadButton)
+        statusTextView = findViewById(R.id.statusTextView)
+        totalStorageTextView = findViewById(R.id.totalStorageTextView)
+        freeSpaceTextView = findViewById(R.id.freeSpaceTextView)
+        batteryPercentageTextView = findViewById(R.id.batteryPercentageTextView)
+        chargingStatusTextView = findViewById(R.id.chargingStatusTextView)
+        powerConsumptionTextView = findViewById(R.id.powerConsumptionTextView)
 
-        override fun onCreate(savedInstanceState: Bundle?) {
-            super.onCreate(savedInstanceState)
-            enableEdgeToEdge()
-            setContentView(R.layout.activity_main)
-
-            ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
-                val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-                v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
-                insets
-            }
-
-            urlEditText = findViewById(R.id.urlEditText)
-            downloadButton = findViewById(R.id.downloadButton)
-            statusTextView = findViewById(R.id.statusTextView)
-            totalStorageTextView = findViewById(R.id.totalStorageTextView)
-            freeSpaceTextView = findViewById(R.id.freeSpaceTextView)
-            batteryPercentageTextView = findViewById(R.id.batteryPercentageTextView)
-            chargingStatusTextView = findViewById(R.id.chargingStatusTextView)
-
-            urlEditText.setText("https://archive.org/download/pdfsandebooks/UP/Heal%20Yourself%20with%20Yoga.pdf")
-
-            downloadButton.setOnClickListener {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (ContextCompat.checkSelfPermission(
-                            this,
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        checkStoragePermissionAndInitiateDownload()
-                    } else {
-                        requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
+        downloadButton.setOnClickListener {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                if (ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    checkStoragePermissionAndInitiateDownloadProcess()
                 } else {
-                    checkStoragePermissionAndInitiateDownload()
+                    requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
+            } else {
+                checkStoragePermissionAndInitiateDownloadProcess()
             }
+        }
 
-            lifecycleScope.launch {
-                repeatOnLifecycle(Lifecycle.State.STARTED) {
-                    fileViewModel.downloadStatus.collect { status ->
-                        Log.d("MainActivity", "DownloadStatus observed: $status")
-                        when (status) {
-                            FileViewModel.DownloadStatus.Idle -> {
-                                statusTextView.text = "Status: Idle"
-                            }
-                            is FileViewModel.DownloadStatus.Enqueued -> {
-                                statusTextView.text = "Download enqueued (Work ID: ${status.workId})"
-                            }
-                            FileViewModel.DownloadStatus.Loading -> {
-                                statusTextView.text = "Status: Initializing download..."
-                            }
-                            is FileViewModel.DownloadStatus.Progress -> {
-                                statusTextView.text = "Downloading: ${status.percentage}%"
-                            }
-                            FileViewModel.DownloadStatus.Completed -> {
-                                statusTextView.text = "Download successful!"
-                                updateStorageInfo()
-                            }
-                            is FileViewModel.DownloadStatus.Failed -> {
-                                statusTextView.text = "Download failed: ${status.message ?: "Unknown error"}"
-                                Log.e("MainActivity", "Download failed: ${status.message ?: "Unknown error"}")
-                            }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fileViewModel.downloadStatus.collect { status ->
+                    Log.d("MainActivity", "DownloadStatus observed: $status")
+                    when (status) {
+                        FileViewModel.DownloadStatus.Idle -> {
+                            statusTextView.text = "Status: Ready to fetch file metadata."
+                            downloadButton.isEnabled = true
+                            powerConsumptionTextView.text = "Power Consumption: N/A"
+                        }
+                        is FileViewModel.DownloadStatus.Enqueued -> {
+                            statusTextView.text = "Download enqueued (Work ID: ${status.workId})"
+                            downloadButton.isEnabled = false
+                            powerConsumptionTextView.text = "Power Consumption: Measuring..."
+                        }
+                        FileViewModel.DownloadStatus.Loading -> {
+                            statusTextView.text = "Status: Initializing download..."
+                            downloadButton.isEnabled = false
+                            powerConsumptionTextView.text = "Power Consumption: Measuring..."
+                        }
+                        is FileViewModel.DownloadStatus.Progress -> {
+                            statusTextView.text = "Downloading: ${status.percentage}%"
+                            downloadButton.isEnabled = false
+
+                        }
+                        is FileViewModel.DownloadStatus.Completed -> {
+                            val consumptionText = status.powerConsumptionAmps?.let {
+                                "%.4f Amps".format(it)
+                            } ?: "N/A (Could not measure)"
+                            statusTextView.text = "Download successful! Checking for next file..."
+                            powerConsumptionTextView.text = "Last File Power Consumption: $consumptionText"
+                            updateStorageInfo()
+                        }
+                        is FileViewModel.DownloadStatus.Failed -> {
+                            statusTextView.text = "Download failed: All Files Downloaded"
+                            Log.e("MainActivity", "Download failed: ${status.message ?: "Unknown error"}")
+                            downloadButton.isEnabled = true
+                            powerConsumptionTextView.text = "Power Consumption: N/A (Failed)"
+                        }
+                        FileViewModel.DownloadStatus.FetchingMetadata -> {
+                            statusTextView.text = "Status: Fetching file metadata from backend..."
+                            downloadButton.isEnabled = false
+                            powerConsumptionTextView.text = "Power Consumption: N/A"
+                        }
+                        is FileViewModel.DownloadStatus.MetadataFetched -> {
+                            statusTextView.text = "Status: Metadata fetched for ${status.fileName}. Enqueuing download..."
+                            downloadButton.isEnabled = false
+                            powerConsumptionTextView.text = "Power Consumption: N/A"
+                        }
+                        FileViewModel.DownloadStatus.AllDownloadsCompleted -> {
+                            statusTextView.text = "All files downloaded successfully!"
+                            downloadButton.isEnabled = true
+                            updateStorageInfo()
+                            powerConsumptionTextView.text = "Power Consumption: All downloads completed."
                         }
                     }
                 }
             }
-
-            updateStorageInfo()
-
-            batteryInfoReceiver = BatteryInfoReceiver(this)
-            val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-            registerReceiver(batteryInfoReceiver, iFilter)
-
-            val batteryStatus: Intent? = registerReceiver(null, iFilter)
-            updateBatteryInfo(batteryStatus)
         }
 
-        override fun onDestroy() {
-            super.onDestroy()
-            unregisterReceiver(batteryInfoReceiver)
-        }
+        updateStorageInfo()
 
-        private fun checkStoragePermissionAndInitiateDownload() {
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-                if (ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    initiateDownload()
-                } else {
-                    requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
+        batteryInfoReceiver = BatteryInfoReceiver(this)
+        val iFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        registerReceiver(batteryInfoReceiver, iFilter)
+
+        val batteryStatus: Intent? = registerReceiver(null, iFilter)
+        updateBatteryInfo(batteryStatus)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(batteryInfoReceiver)
+    }
+
+    private fun checkStoragePermissionAndInitiateDownloadProcess() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) == PackageManager.PERMISSION_GRANTED
+            ) {
+                CoroutineScope(Dispatchers.IO).launch{ initiateDownloadProcess() }
             } else {
-                initiateDownload()
+                requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
-        }
-
-        private fun initiateDownload() {
-            val urlString = urlEditText.text.toString().trim()
-            if (urlString.isEmpty()) {
-                statusTextView.text = "Please enter a URL."
-                return
-            }
-
-            val fileName = getFileNameFromUrl(urlString)
-            fileViewModel.startDownload(urlString, fileName)
-        }
-
-        private fun getFileNameFromUrl(url: String): String {
-            return try {
-                val urlObject = URL(url)
-                val path = urlObject.path
-                if (path.isNotEmpty() && path != "/") {
-                    path.substringAfterLast('/')
-                } else {
-                    "downloaded_file_${System.currentTimeMillis()}.bin"
-                }
-            } catch (e: Exception) {
-                "downloaded_file_${System.currentTimeMillis()}.bin"
-            }
-        }
-
-        private fun updateStorageInfo() {
-            val (totalInternal, freeInternal) = StorageUtils.getInternalStorageInfo()
-            totalStorageTextView.text = "Total Internal Storage: ${StorageUtils.formatFileSize(totalInternal)}"
-            freeSpaceTextView.text = "Free Internal Space: ${StorageUtils.formatFileSize(freeInternal)}"
-        }
-
-
-        override fun onBatteryInfoUpdated(percentage: Int, isCharging: Boolean) {
-            batteryPercentageTextView.text = "Battery: $percentage%"
-            chargingStatusTextView.text = "Charging: ${if (isCharging) "Yes" else "No"}"
-        }
-
-
-        private fun updateBatteryInfo(batteryStatus: Intent?) {
-            if (batteryStatus == null) return
-
-            val level: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
-            val scale: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
-            val batteryPct: Int = if (scale > 0) (level * 100 / scale.toFloat()).toInt() else 0
-
-            val status: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
-            val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                    status == BatteryManager.BATTERY_STATUS_FULL
-
-            onBatteryInfoUpdated(batteryPct, isCharging)
+        } else {
+            CoroutineScope(Dispatchers.IO).launch{ initiateDownloadProcess() }
         }
     }
+
+    private fun initiateDownloadProcess() {
+        CoroutineScope(Dispatchers.IO).launch {
+            fileViewModel.startBackendDrivenDownload()
+        }
+    }
+
+    private fun updateStorageInfo() {
+        val (totalInternal, freeInternal) = StorageUtils.getInternalStorageInfo()
+        totalStorageTextView.text = "Total Internal Storage: ${StorageUtils.formatFileSize(totalInternal)}"
+        freeSpaceTextView.text = "Free Internal Space: ${StorageUtils.formatFileSize(freeInternal)}"
+    }
+
+    override fun onBatteryInfoUpdated(percentage: Int, isCharging: Boolean) {
+        batteryPercentageTextView.text = "Battery: $percentage%"
+        chargingStatusTextView.text = "Charging: ${if (isCharging) "Yes" else "No"}"
+    }
+
+    private fun updateBatteryInfo(batteryStatus: Intent?) {
+        if (batteryStatus == null) return
+
+        val level: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        val batteryPct: Int = if (scale > 0) (level * 100 / scale.toFloat()).toInt() else 0
+
+        val status: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+        val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                status == BatteryManager.BATTERY_STATUS_FULL
+        onBatteryInfoUpdated(batteryPct, isCharging)
+    }
+}
