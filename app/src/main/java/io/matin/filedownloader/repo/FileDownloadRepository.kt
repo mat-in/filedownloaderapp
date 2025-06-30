@@ -11,27 +11,45 @@ import com.google.gson.Gson
 import io.matin.filedownloader.data.DownloadMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicReference // For thread-safe URL updates
 
 @Singleton
 class FileDownloadRepository @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val gson: Gson
 ) {
+    // Use AtomicReference for thread-safe updates to the base URL
+    // Initialize with a default or empty string; it MUST be set before any network calls.
+    private val _baseUrl = AtomicReference<String>("")
 
-    private val BASE_URL = "http://localhost:8080"
+    // Setter function to update the base URL
+    fun setBaseUrl(url: String) {
+        _baseUrl.set(url)
+        Log.d("FileDownloadRepo", "Base URL set to: ${url}")
+    }
+
+    private fun getBaseUrl(): String {
+        val url = _baseUrl.get()
+        if (url.isNullOrBlank()) {
+            // This case should ideally not happen if setBaseUrl is called correctly
+            // before any network operations.
+            throw IllegalStateException("Base URL is not set in FileDownloadRepository. Call setBaseUrl() first.")
+        }
+        return url
+    }
+
 
     /**
      * Fetches metadata for the next file to download from the backend.
      * Returns Result.failure if no more files are available or an error occurs.
      */
     suspend fun getNextFileMetadata(): Result<DownloadMetadata> {
-        val url = "$BASE_URL/getNextFile"
+        val url = "${getBaseUrl()}/getNextFile" // Use the dynamic base URL
         val request = Request.Builder()
             .url(url)
             .build()
 
         return try {
-
             val (response, responseBodyString) = withContext(Dispatchers.IO) {
                 val response = okHttpClient.newCall(request).execute()
                 val responseBody = response.body?.string()
@@ -70,7 +88,7 @@ class FileDownloadRepository @Inject constructor(
      * @return An OkHttp Response containing the file data.
      */
     suspend fun downloadFileFromBackend(fileName: String, startByte: Long = 0L): Response {
-        val url = "$BASE_URL/getFile/${fileName.encodeURLPathSegment()}"
+        val url = "${getBaseUrl()}/getFile/${fileName.encodeURLPathSegment()}" // Use dynamic base URL
         val requestBuilder = Request.Builder().url(url)
 
         if (startByte > 0) {
@@ -92,18 +110,20 @@ class FileDownloadRepository @Inject constructor(
      * Uses the /status/success/{name} endpoint.
      */
     suspend fun sendDownloadSuccess(fileName: String): Result<String> {
-        val url = "$BASE_URL/status/success/${fileName.encodeURLPathSegment()}"
+        val url = "${getBaseUrl()}/status/success/${fileName.encodeURLPathSegment()}" // Use dynamic base URL
         val request = Request.Builder()
             .url(url)
             .build()
 
         return try {
-            val response = withContext(Dispatchers.IO) {
-                okHttpClient.newCall(request).execute()
+            val (response, responseBodyString) = withContext(Dispatchers.IO) {
+                val response = okHttpClient.newCall(request).execute()
+                val responseBody = response.body?.string()
+                Pair(response, responseBody)
             }
 
             if (response.isSuccessful) {
-                val message = response.body?.string() ?: "Success message not provided"
+                val message = responseBodyString ?: "Success message not provided"
                 Log.d("FileDownloadRepo", "Download success reported for $fileName: $message")
                 Result.success(message)
             } else {
@@ -118,14 +138,15 @@ class FileDownloadRepository @Inject constructor(
     }
 }
 
+// Helper extension function for URL encoding query parameters
 fun String.encodeURLParameter(): String {
     return java.net.URLEncoder.encode(this, "UTF-8")
-        .replace("+", "%20")
+        .replace("+", "%20") // Replace + with %20 for space encoding
 }
 
-
+// Helper extension function for URL encoding path segments
 fun String.encodeURLPathSegment(): String {
     return java.net.URLEncoder.encode(this, "UTF-8")
         .replace("+", "%20")
-        .replace("%2F", "/")
+        .replace("%2F", "/") // Don't encode forward slashes if they are part of the path structure
 }

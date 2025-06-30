@@ -13,6 +13,7 @@ import io.matin.filedownloader.filestorage.FileStorageHelper
 import io.matin.filedownloader.network.ProgressResponseBody
 import io.matin.filedownloader.repo.FileDownloadRepository
 import io.matin.filedownloader.notifications.DownloadNotificationManager
+import java.net.URL
 import android.Manifest
 import kotlinx.coroutines.launch
 import okhttp3.ResponseBody
@@ -24,9 +25,11 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.coroutines.coroutineContext
 import io.matin.filedownloader.repo.encodeURLParameter
 import io.matin.filedownloader.utils.ChecksumUtils
 import android.os.BatteryManager
+import okio.Okio
 import okio.buffer
 import okio.source
 
@@ -44,10 +47,8 @@ class DownloadWorker(
         const val KEY_FILE_LENGTH = "file_length"
         const val KEY_CHECKSUM = "checkSum"
         const val KEY_POWER_CONSUMPTION_AMPS = "power_consumption_amps"
+        const val KEY_BASE_URL = "base_url"
         private const val TAG = "DownloadWorker"
-
-
-        private const val BACKEND_BASE_URL = "http://localhost:8080"
     }
 
     @Volatile
@@ -79,11 +80,16 @@ class DownloadWorker(
         val fileName = inputData.getString(KEY_FILE_NAME) ?: return Result.failure(workDataOf("error_message" to "File Name is missing"))
         val fileLength = inputData.getLong(KEY_FILE_LENGTH, -1L)
         val checkSum = inputData.getString(KEY_CHECKSUM)
+        val baseUrl = inputData.getString(KEY_BASE_URL)
+            ?: return Result.failure(workDataOf("error_message" to "Base URL is missing in worker input data."))
 
 
-        val downloadUrlForDb = "$BACKEND_BASE_URL/getFile/${fileName.encodeURLParameter()}"
+        fileDownloadRepository.setBaseUrl(baseUrl)
 
-        Log.d(TAG, "Starting download for $fileName (via backend /getFile/{name} endpoint)")
+
+        val downloadUrlForDb = "$baseUrl/getFile/${fileName.encodeURLParameter()}"
+
+        Log.d(TAG, "Starting download for $fileName (via backend /getFile/{name} endpoint) from $baseUrl")
 
         lastReportedFivePercent = null
 
@@ -115,7 +121,6 @@ class DownloadWorker(
         } catch (e: Exception) {
             Log.e(TAG, "Error getting initial battery current: ${e.message}")
         }
-
 
         try {
             val progressListener = object : ProgressResponseBody.ProgressListener {
@@ -207,16 +212,7 @@ class DownloadWorker(
                 }
 
                 if (initialBatteryCurrentMicroAmps != null && finalBatteryCurrentMicroAmps != null) {
-                    // Current_NOW is typically negative for discharge, positive for charge.
-                    // We are interested in the absolute change, or the discharge during the period.
-                    // If initial is -100000 uA (discharging) and final is -120000 uA (more discharging),
-                    // the difference (initial - final) would be -100000 - (-120000) = 20000 uA = 0.02 A.
-                    // This indicates a consumption of 0.02 Amps.
-                    // If the values are positive (charging), the logic might need adjustment based on interpretation.
-                    // For simplicity, we'll assume a decrease in "current_now" (more negative or less positive)
-                    // indicates consumption.
                     powerConsumptionAmps = (initialBatteryCurrentMicroAmps - finalBatteryCurrentMicroAmps) / 1_000_000.0f
-                    // Ensure consumption is non-negative, as it represents power used.
                     powerConsumptionAmps = powerConsumptionAmps?.coerceAtLeast(0.0f)
                     Log.d(TAG, "Calculated Power Consumption for $fileName: ${powerConsumptionAmps} Amps")
                 } else {
@@ -304,6 +300,7 @@ class DownloadWorker(
             } else {
                 notificationManager.cancelNotification()
             }
+
             if (tempDownloadFile.exists()) {
                 Log.d(TAG, "Cleaning up temporary file: ${tempDownloadFile.absolutePath}")
                 tempDownloadFile.delete()
@@ -320,6 +317,16 @@ class DownloadWorker(
         } else {
             Log.e(TAG, "File saving failed or download encountered an unrecoverable error for $fileName")
             Result.failure(workDataOf("error_message" to "File saving failed or download error"))
+        }
+    }
+
+    private fun getFileNameFromUrl(url: String): String {
+        return try {
+            val path = URL(url).path
+            val lastSegment = path.substringAfterLast('/')
+            if (lastSegment.isNotBlank()) lastSegment else "downloaded_file_${System.currentTimeMillis()}.bin"
+        } catch (e: Exception) {
+            "downloaded_file_${System.currentTimeMillis()}.bin"
         }
     }
 }

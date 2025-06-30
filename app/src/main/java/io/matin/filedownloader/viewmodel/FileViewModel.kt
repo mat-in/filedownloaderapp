@@ -22,6 +22,7 @@ import android.util.Log
 import androidx.lifecycle.asFlow
 import io.matin.filedownloader.repo.FileDownloadRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest // Import collectLatest
 
 @HiltViewModel
 class FileViewModel @Inject constructor(
@@ -33,6 +34,25 @@ class FileViewModel @Inject constructor(
     val downloadStatus: StateFlow<DownloadStatus> = _downloadStatus.asStateFlow()
 
     private val _isDownloadingQueueActive = MutableStateFlow(false)
+
+    // New: MutableStateFlow for the base URL
+    private val _baseUrl = MutableStateFlow("")
+    val baseUrl: StateFlow<String> = _baseUrl.asStateFlow()
+
+    init {
+        // Observe _baseUrl changes and pass to repository
+        viewModelScope.launch {
+            _baseUrl.collectLatest { url ->
+                Log.d("FileViewModel", "Base URL updated in ViewModel: $url")
+                fileDownloadRepository.setBaseUrl(url)
+            }
+        }
+    }
+
+    // New: Function to set the base URL
+    fun setBaseUrl(url: String) {
+        _baseUrl.value = url
+    }
 
     sealed class DownloadStatus {
         object Idle : DownloadStatus()
@@ -48,6 +68,14 @@ class FileViewModel @Inject constructor(
 
     fun startBackendDrivenDownload() {
         viewModelScope.launch(Dispatchers.IO) {
+            // Ensure a URL is set before starting
+            if (_baseUrl.value.isBlank()) {
+                Log.e("FileViewModel", "Cannot start download: Base URL is not set.")
+                _downloadStatus.value = DownloadStatus.Failed("Backend URL not set. Please enter a URL.")
+                _isDownloadingQueueActive.value = false
+                return@launch
+            }
+
             if (_isDownloadingQueueActive.compareAndSet(false, true)) {
                 Log.d("FileViewModel", "Starting backend-driven download queue.")
                 fetchAndEnqueueNextFile()
@@ -78,7 +106,7 @@ class FileViewModel @Inject constructor(
                     Log.e("FileViewModel", "Failed to fetch file metadata: $errorMessage", throwable)
                     _downloadStatus.value = DownloadStatus.Failed(errorMessage)
                 }
-                _isDownloadingQueueActive.value = false
+                _isDownloadingQueueActive.value = false // Reset queue status on completion or failure
             }
         }
     }
@@ -88,6 +116,8 @@ class FileViewModel @Inject constructor(
             .putString(DownloadWorker.KEY_FILE_NAME, fileName)
             .putLong(DownloadWorker.KEY_FILE_LENGTH, fileLength)
             .putString(DownloadWorker.KEY_CHECKSUM, checkSum)
+            // Pass the current base URL to the worker
+            .putString(DownloadWorker.KEY_BASE_URL, _baseUrl.value)
             .build()
 
         val constraints = Constraints.Builder()

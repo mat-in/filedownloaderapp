@@ -9,7 +9,9 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Button
+import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -25,7 +27,7 @@ import io.matin.filedownloader.viewmodel.FileViewModel
 import kotlinx.coroutines.launch
 import io.matin.filedownloader.utils.StorageUtils
 import io.matin.filedownloader.receivers.BatteryInfoReceiver
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 
 @AndroidEntryPoint
@@ -39,6 +41,9 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
     private lateinit var chargingStatusTextView: TextView
     private lateinit var powerConsumptionTextView: TextView
 
+
+    private lateinit var urlEditText: EditText
+
     private val fileViewModel: FileViewModel by viewModels()
 
     private lateinit var batteryInfoReceiver: BatteryInfoReceiver
@@ -47,7 +52,7 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            CoroutineScope(Dispatchers.IO).launch{ initiateDownloadProcess() }
+            lifecycleScope.launch { initiateDownloadProcess() }
         } else {
             statusTextView.text = "Storage permission denied. Cannot save file."
             Log.w("MainActivity", "Storage permission denied by user.")
@@ -85,7 +90,13 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         chargingStatusTextView = findViewById(R.id.chargingStatusTextView)
         powerConsumptionTextView = findViewById(R.id.powerConsumptionTextView)
 
+
+        urlEditText = findViewById(R.id.urlEditText)
+
+
         downloadButton.setOnClickListener {
+            urlEditText.isEnabled = false
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(
                         this,
@@ -109,16 +120,19 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                         FileViewModel.DownloadStatus.Idle -> {
                             statusTextView.text = "Status: Ready to fetch file metadata."
                             downloadButton.isEnabled = true
+                            urlEditText.isEnabled = true
                             powerConsumptionTextView.text = "Power Consumption: N/A"
                         }
                         is FileViewModel.DownloadStatus.Enqueued -> {
                             statusTextView.text = "Download enqueued (Work ID: ${status.workId})"
                             downloadButton.isEnabled = false
+                            urlEditText.isEnabled = false
                             powerConsumptionTextView.text = "Power Consumption: Measuring..."
                         }
                         FileViewModel.DownloadStatus.Loading -> {
                             statusTextView.text = "Status: Initializing download..."
                             downloadButton.isEnabled = false
+                            urlEditText.isEnabled = false
                             powerConsumptionTextView.text = "Power Consumption: Measuring..."
                         }
                         is FileViewModel.DownloadStatus.Progress -> {
@@ -133,26 +147,31 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                             statusTextView.text = "Download successful! Checking for next file..."
                             powerConsumptionTextView.text = "Last File Power Consumption: $consumptionText"
                             updateStorageInfo()
+
                         }
                         is FileViewModel.DownloadStatus.Failed -> {
-                            statusTextView.text = "Download failed: All Files Downloaded"
+                            statusTextView.text = "Download failed: ${status.message ?: "Unknown error"}"
                             Log.e("MainActivity", "Download failed: ${status.message ?: "Unknown error"}")
                             downloadButton.isEnabled = true
+                            urlEditText.isEnabled = true
                             powerConsumptionTextView.text = "Power Consumption: N/A (Failed)"
                         }
                         FileViewModel.DownloadStatus.FetchingMetadata -> {
                             statusTextView.text = "Status: Fetching file metadata from backend..."
                             downloadButton.isEnabled = false
+                            urlEditText.isEnabled = false
                             powerConsumptionTextView.text = "Power Consumption: N/A"
                         }
                         is FileViewModel.DownloadStatus.MetadataFetched -> {
                             statusTextView.text = "Status: Metadata fetched for ${status.fileName}. Enqueuing download..."
                             downloadButton.isEnabled = false
+                            urlEditText.isEnabled = false
                             powerConsumptionTextView.text = "Power Consumption: N/A"
                         }
                         FileViewModel.DownloadStatus.AllDownloadsCompleted -> {
                             statusTextView.text = "All files downloaded successfully!"
                             downloadButton.isEnabled = true
+                            urlEditText.isEnabled = true
                             updateStorageInfo()
                             powerConsumptionTextView.text = "Power Consumption: All downloads completed."
                         }
@@ -183,18 +202,29 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                     Manifest.permission.WRITE_EXTERNAL_STORAGE
                 ) == PackageManager.PERMISSION_GRANTED
             ) {
-                CoroutineScope(Dispatchers.IO).launch{ initiateDownloadProcess() }
+                lifecycleScope.launch { initiateDownloadProcess() }
             } else {
                 requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         } else {
-            CoroutineScope(Dispatchers.IO).launch{ initiateDownloadProcess() }
+            lifecycleScope.launch { initiateDownloadProcess() }
         }
     }
 
-    private fun initiateDownloadProcess() {
-        CoroutineScope(Dispatchers.IO).launch {
+    private suspend fun initiateDownloadProcess() {
+        val currentUrl = urlEditText.text.toString().trim()
+        if (currentUrl.isNotBlank()) {
+            fileViewModel.setBaseUrl(currentUrl)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Starting download with URL: $currentUrl", Toast.LENGTH_SHORT).show()
+            }
             fileViewModel.startBackendDrivenDownload()
+        } else {
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity, "Please enter a valid backend URL.", Toast.LENGTH_LONG).show()
+                urlEditText.isEnabled = true
+            }
+            fileViewModel.resetDownloadStatus()
         }
     }
 
@@ -219,6 +249,7 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         val status: Int = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
         val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING ||
                 status == BatteryManager.BATTERY_STATUS_FULL
+
         onBatteryInfoUpdated(batteryPct, isCharging)
     }
 }
