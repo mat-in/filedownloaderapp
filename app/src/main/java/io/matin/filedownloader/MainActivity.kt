@@ -41,7 +41,6 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
     private lateinit var chargingStatusTextView: TextView
     private lateinit var powerConsumptionTextView: TextView
 
-
     private lateinit var urlEditText: EditText
 
     private val fileViewModel: FileViewModel by viewModels()
@@ -90,25 +89,28 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         chargingStatusTextView = findViewById(R.id.chargingStatusTextView)
         powerConsumptionTextView = findViewById(R.id.powerConsumptionTextView)
 
-
         urlEditText = findViewById(R.id.urlEditText)
 
-
         downloadButton.setOnClickListener {
-            urlEditText.isEnabled = false
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(
-                        this,
-                        Manifest.permission.POST_NOTIFICATIONS
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    checkStoragePermissionAndInitiateDownloadProcess()
+            // UI elements are controlled by observing downloadStatus
+            if (fileViewModel.downloadStatus.value is FileViewModel.DownloadStatus.Idle ||
+                fileViewModel.downloadStatus.value is FileViewModel.DownloadStatus.Failed ||
+                fileViewModel.downloadStatus.value is FileViewModel.DownloadStatus.AllDownloadsCompleted) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(
+                            this,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        checkStoragePermissionAndInitiateDownloadProcess()
+                    } else {
+                        requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
                 } else {
-                    requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    checkStoragePermissionAndInitiateDownloadProcess()
                 }
             } else {
-                checkStoragePermissionAndInitiateDownloadProcess()
+                Toast.makeText(this, "Download already in progress or enqueued.", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -138,7 +140,6 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                         is FileViewModel.DownloadStatus.Progress -> {
                             statusTextView.text = "Downloading: ${status.percentage}%"
                             downloadButton.isEnabled = false
-
                         }
                         is FileViewModel.DownloadStatus.Completed -> {
                             val consumptionText = status.powerConsumptionAmps?.let {
@@ -147,7 +148,6 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                             statusTextView.text = "Download successful! Checking for next file..."
                             powerConsumptionTextView.text = "Last File Power Consumption: $consumptionText"
                             updateStorageInfo()
-
                         }
                         is FileViewModel.DownloadStatus.Failed -> {
                             statusTextView.text = "Download failed: ${status.message ?: "Unknown error"}"

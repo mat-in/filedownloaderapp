@@ -29,7 +29,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/urlLabel"
         android:autofillHints="url"
-        android:text="base url" />
+        android:text="" />
 
     <Button
         android:id="@+id/downloadButton"
