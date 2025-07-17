@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import io.matin.filedownloader.data.AppDatabase // Assuming your Room database class is named AppDatabase
+import io.matin.filedownloader.data.AppDatabase
 import io.matin.filedownloader.data.WifiLogEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -14,8 +14,6 @@ class WifiLoggingWorker (
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams) {
 
-    // You will get the DAO instance inside doWork() or lazy-initialized property
-    // as you cannot pass it directly in the constructor of a non-Hilt Worker
     private val wifiLogDao = AppDatabase.getInstance(appContext).wifiLogDao()
 
     companion object {
@@ -32,10 +30,8 @@ class WifiLoggingWorker (
         val wifiStandard = inputData.getInt(KEY_WIFI_STANDARD, 0)
         val frequencyMHz = inputData.getInt(KEY_FREQUENCY, 0)
 
-        // It's good to check if any data is present before proceeding
         if (rssi == 0 && linkSpeedMbps == 0 && wifiStandard == 0 && frequencyMHz == 0) {
             Log.w(TAG, "No Wi-Fi data received to log. Exiting worker.")
-            // Consider if this should be success if it means 'nothing to do' or failure if 'expected data not found'
             return Result.failure()
         }
 

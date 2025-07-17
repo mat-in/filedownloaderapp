@@ -11,9 +11,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.annotation.RequiresPermission
 import android.Manifest
-import android.util.Log // Import Log
+import android.util.Log
 import io.matin.filedownloader.MainActivity
-import io.matin.filedownloader.R // Keep R import if you use other resources
+import io.matin.filedownloader.R
 
 import javax.inject.Inject
 import javax.inject.Singleton
