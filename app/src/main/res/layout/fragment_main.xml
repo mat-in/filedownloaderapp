@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".ui.MainFragment">
+
+    <EditText
+        android:id="@+id/urlEditText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Enter Backend URL (e.g., http://192.168.1.100:8080)"
+        android:inputType="textUri"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/downloadButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start Backend-Driven Download"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/statusTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: Idle"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/totalStorageTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Total Internal Storage: N/A"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:id="@+id/freeSpaceTextView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Free Internal Space: N/A"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Logcat Errors:"
+        android:textStyle="bold"
+        android:layout_marginBottom="4dp" />
+
+    <ScrollView
+        android:id="@+id/logScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@android:color/black"
+        android:padding="4dp">
+
+        <TextView
+            android:id="@+id/logTextView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@android:color/holo_red_light"
+            android:textSize="12sp"
+            android:text="Logcat Errors will appear here...\n"
+            android:scrollbars="vertical"
+            />
+    </ScrollView>
+
+</LinearLayout>

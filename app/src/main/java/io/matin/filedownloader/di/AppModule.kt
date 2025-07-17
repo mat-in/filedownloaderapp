@@ -1,6 +1,3 @@
-// package io.matin.filedownloader.di
-// (No changes to imports for other modules)
-
 package io.matin.filedownloader.di
 
 import android.content.Context
@@ -14,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.matin.filedownloader.data.AppDatabase
 import io.matin.filedownloader.data.DownloadDao
+import io.matin.filedownloader.data.BatteryLogDao
+import io.matin.filedownloader.data.WifiLogDao
 import io.matin.filedownloader.filestorage.FileStorageHelper
 import io.matin.filedownloader.notifications.DownloadNotificationManager
 import io.matin.filedownloader.repo.FileDownloadRepository
@@ -77,12 +76,24 @@ class AppModule {
     @Provides
     @Singleton
     fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase {
-        return AppDatabase.getDatabase(context)
+        return AppDatabase.getInstance(context)
     }
 
     @Provides
     @Singleton
     fun provideDownloadDao(appDatabase: AppDatabase): DownloadDao {
         return appDatabase.downloadDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideBatteryLogDao(appDatabase: AppDatabase): BatteryLogDao {
+        return appDatabase.batteryLogDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideWifiLogDao(appDatabase: AppDatabase): WifiLogDao {
+        return appDatabase.wifiLogDao()
     }
 }

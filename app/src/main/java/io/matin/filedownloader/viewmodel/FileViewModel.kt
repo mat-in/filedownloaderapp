@@ -166,23 +166,6 @@ class FileViewModel @Inject constructor(
             .setInitialDelay(0, java.util.concurrent.TimeUnit.SECONDS)
             .addTag(fileName)
             .build()
-
-        // *** IMPORTANT CHANGE HERE ***
-        // Instead of using fileName for unique work, use the overall queue name.
-        // For sequential downloads, we want each individual file download worker
-        // to be CHAINED or to use KEEP, not REPLACE, if we are part of an ongoing queue.
-        // For the sequential pattern you have (fetch next file after current completes),
-        // we can simply use KEEP, meaning if a worker for a *specific file name* already exists,
-        // we keep the existing one. This prevents duplicate workers for the *same file*.
-        // The overall queue management is done by DOWNLOAD_QUEUE_UNIQUE_WORK_NAME.
-
-        // Enqueue the worker as part of the overall unique queue.
-        // ExistingWorkPolicy.APPEND_OR_REPLACE is robust for sequential operations.
-        // However, for this specific "fetch next after complete" pattern,
-        // we enqueue the *next file* worker as a new unique work within the queue.
-        // The key is that `startBackendDrivenDownload()` only runs if the *overall queue* isn't active.
-
-        // If you want each file download to be unique and only run once if it's already running/enqueued
         workManager.enqueueUniqueWork(
             DOWNLOAD_QUEUE_UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,

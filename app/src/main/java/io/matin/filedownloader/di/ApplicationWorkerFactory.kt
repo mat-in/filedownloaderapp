@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.work.ListenableWorker
 import androidx.work.WorkerFactory
 import androidx.work.WorkerParameters
+import io.matin.filedownloader.data.BatteryLogDao
 import io.matin.filedownloader.filestorage.FileStorageHelper
 import io.matin.filedownloader.notifications.DownloadNotificationManager
 import io.matin.filedownloader.repo.FileDownloadRepository
@@ -18,7 +19,8 @@ class ApplicationWorkerFactory @Inject constructor(
     private val fileDownloadRepository: FileDownloadRepository,
     private val notificationManager: DownloadNotificationManager,
     private val fileStorageHelper: FileStorageHelper,
-    private val downloadDao: DownloadDao
+    private val downloadDao: DownloadDao,
+    private val batteryLogDao: BatteryLogDao
 ) : WorkerFactory() {
 
     override fun createWorker(
@@ -34,7 +36,8 @@ class ApplicationWorkerFactory @Inject constructor(
                     fileDownloadRepository,
                     notificationManager,
                     fileStorageHelper,
-                    downloadDao
+                    downloadDao,
+                    batteryLogDao
                 )
             }
             else -> null

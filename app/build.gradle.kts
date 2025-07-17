@@ -35,9 +35,9 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
-    dataBinding{
-        true
-
+    buildFeatures {
+        viewBinding = true
+        dataBinding = true
     }
 }
 
@@ -63,7 +63,10 @@ dependencies {
 
     // WorkManager
     implementation ("androidx.work:work-runtime-ktx:2.10.1")
-    
+
+    //navigation
+    implementation(libs.androidx.navigation.fragment)
+    implementation(libs.androidx.navigation.ui.ktx)
 
     // AndroidX Core & Appcompat
     implementation ("androidx.core:core-ktx:1.13.1")

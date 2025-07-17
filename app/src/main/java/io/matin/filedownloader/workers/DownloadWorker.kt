@@ -1,7 +1,11 @@
 package io.matin.filedownloader.workers
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.os.BatteryManager
 import android.os.Build
 import android.util.Log
 import androidx.annotation.RequiresPermission
@@ -9,29 +13,27 @@ import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import io.matin.filedownloader.data.BatteryLogDao
+import io.matin.filedownloader.data.BatteryLogEntry
+import io.matin.filedownloader.data.DownloadDao
+import io.matin.filedownloader.data.DownloadEntry
 import io.matin.filedownloader.filestorage.FileStorageHelper
 import io.matin.filedownloader.network.ProgressResponseBody
-import io.matin.filedownloader.repo.FileDownloadRepository
 import io.matin.filedownloader.notifications.DownloadNotificationManager
-import java.net.URL
-import android.Manifest
-import kotlinx.coroutines.launch
-import okhttp3.ResponseBody
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import io.matin.filedownloader.data.DownloadEntry
-import io.matin.filedownloader.data.DownloadDao
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
-import kotlin.coroutines.coroutineContext
+import io.matin.filedownloader.repo.FileDownloadRepository
 import io.matin.filedownloader.repo.encodeURLParameter
 import io.matin.filedownloader.utils.ChecksumUtils
-import android.os.BatteryManager
-import okio.Okio
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
 import okio.buffer
 import okio.source
+import java.io.File
+import java.io.FileOutputStream
+import java.net.URL
 
 class DownloadWorker(
     appContext: Context,
@@ -39,14 +41,15 @@ class DownloadWorker(
     private val fileDownloadRepository: FileDownloadRepository,
     private val notificationManager: DownloadNotificationManager,
     private val fileStorageHelper: FileStorageHelper,
-    private val downloadDao: DownloadDao
+    private val downloadDao: DownloadDao,
+    private val batteryLogDao: BatteryLogDao
 ) : CoroutineWorker(appContext, workerParams) {
 
     companion object {
         const val KEY_FILE_NAME = "file_name"
         const val KEY_FILE_LENGTH = "file_length"
         const val KEY_CHECKSUM = "checkSum"
-        const val KEY_POWER_CONSUMPTION_AMPS = "power_consumption_amps"
+        const val KEY_POWER_CONSUMPTION_AMPS = "power_consumption_amps" // This will now store raw current_now
         const val KEY_BASE_URL = "base_url"
         private const val TAG = "DownloadWorker"
     }
@@ -83,9 +86,7 @@ class DownloadWorker(
         val baseUrl = inputData.getString(KEY_BASE_URL)
             ?: return Result.failure(workDataOf("error_message" to "Base URL is missing in worker input data."))
 
-
         fileDownloadRepository.setBaseUrl(baseUrl)
-
 
         val downloadUrlForDb = "$baseUrl/getFile/${fileName.encodeURLParameter()}"
 
@@ -109,17 +110,19 @@ class DownloadWorker(
         var totalDownloadedSize: Long = startByte
         val startTime = System.currentTimeMillis()
         var outputUriString: String? = null
-        var powerConsumptionAmps: Float? = null
+        // Changed to store instantaneous current, not a calculated difference
+        var instantaneousBatteryCurrentMicroAmps: Long? = null
 
         val batteryManager = applicationContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
-        var initialBatteryCurrentMicroAmps: Long? = null
+
         try {
-            initialBatteryCurrentMicroAmps = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-            Log.d(TAG, "Initial Battery Current: ${initialBatteryCurrentMicroAmps / 1000.0f} mA")
+            // Only capture current_now at the start of the download for logging
+            instantaneousBatteryCurrentMicroAmps = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+            Log.d(TAG, "Instantaneous Battery Current (Start): ${instantaneousBatteryCurrentMicroAmps / 1000.0f} mA")
         } catch (e: SecurityException) {
             Log.e(TAG, "Permission BATTERY_STATS not granted. Cannot read battery current. ${e.message}")
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting initial battery current: ${e.message}")
+            Log.e(TAG, "Error getting instantaneous battery current: ${e.message}")
         }
 
         try {
@@ -201,23 +204,11 @@ class DownloadWorker(
             }
 
             if (downloadSuccess) {
-                var finalBatteryCurrentMicroAmps: Long? = null
-                try {
-                    finalBatteryCurrentMicroAmps = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
-                    Log.d(TAG, "Final Battery Current: ${finalBatteryCurrentMicroAmps / 1000.0f} mA")
-                } catch (e: SecurityException) {
-                    Log.e(TAG, "Permission BATTERY_STATS not granted. Cannot read battery current. ${e.message}")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error getting final battery current: ${e.message}")
-                }
+                // Remove finalBatteryCurrentMicroAmps and calculation logic
+                // powerConsumptionAmps will now store the instantaneous reading taken at the start
+                // or remain null if it couldn't be read.
+                Log.d(TAG, "Power consumption logged as instantaneous current at start: ${instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f)} Amps (raw microamps: $instantaneousBatteryCurrentMicroAmps)")
 
-                if (initialBatteryCurrentMicroAmps != null && finalBatteryCurrentMicroAmps != null) {
-                    powerConsumptionAmps = (initialBatteryCurrentMicroAmps - finalBatteryCurrentMicroAmps) / 1_000_000.0f
-                    powerConsumptionAmps = powerConsumptionAmps?.coerceAtLeast(0.0f)
-                    Log.d(TAG, "Calculated Power Consumption for $fileName: ${powerConsumptionAmps} Amps")
-                } else {
-                    Log.w(TAG, "Could not calculate power consumption due to missing battery current data.")
-                }
 
                 if (!checkSum.isNullOrBlank()) {
                     try {
@@ -269,13 +260,35 @@ class DownloadWorker(
                         downloadTimeMillis = downloadDuration,
                         fileUri = outputUriString,
                         checksum = checkSum,
-                        powerConsumptionAmps = powerConsumptionAmps
+                        powerConsumptionAmps = instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f) // Store as Amps or null
                     )
 
-                    withContext(Dispatchers.IO) {
+                    val insertedDownloadId = withContext(Dispatchers.IO) {
                         downloadDao.insertDownload(downloadEntry)
                     }
                     Log.d(TAG, "Download metrics saved to DB: $downloadEntry")
+
+                    // --- New Battery Log Saving ---
+                    val batteryStatus: Intent? = applicationContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                    val level: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                    val scale: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+                    val currentBatteryPercentage: Int = if (scale > 0) (level * 100 / scale.toFloat()).toInt() else 0
+
+                    val status: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                    val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+
+                    val batteryLogEntry = BatteryLogEntry(
+                        downloadId = insertedDownloadId,
+                        batteryPercentage = currentBatteryPercentage,
+                        isCharging = isCharging,
+                        powerConsumptionAmps = instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f) // Store as Amps or null
+                    )
+                    withContext(Dispatchers.IO) {
+                        batteryLogDao.insertBatteryLog(batteryLogEntry)
+                    }
+                    Log.d(TAG, "Battery metrics saved to DB: $batteryLogEntry")
+                    // --- End New Battery Log Saving ---
+
 
                     val successResult = fileDownloadRepository.sendDownloadSuccess(fileName)
                     successResult.onSuccess { msg ->
@@ -312,7 +325,8 @@ class DownloadWorker(
             Result.success(workDataOf(
                 "file_name" to fileName,
                 "file_uri" to (outputUriString ?: ""),
-                KEY_POWER_CONSUMPTION_AMPS to (powerConsumptionAmps ?: -1.0f)
+                // Pass the instantaneous raw value (converted to Amps or -1.0f if null)
+                KEY_POWER_CONSUMPTION_AMPS to (instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f) ?: -1.0f)
             ))
         } else {
             Log.e(TAG, "File saving failed or download encountered an unrecoverable error for $fileName")

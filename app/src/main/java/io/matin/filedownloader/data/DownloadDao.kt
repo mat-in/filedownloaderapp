@@ -8,7 +8,7 @@ import androidx.room.Query
 @Dao
 interface DownloadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertDownload(downloadEntry: DownloadEntry)
+    suspend fun insertDownload(downloadEntry: DownloadEntry): Long
 
     @Query("SELECT * FROM downloads ORDER BY downloadDate DESC")
     suspend fun getAllDownloads(): List<DownloadEntry>
