@@ -63,11 +63,10 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
-            android:textColor="@android:color/holo_red_light"
-            android:textSize="12sp"
-            android:text="Logcat Errors will appear here...\n"
             android:scrollbars="vertical"
-            />
+            android:text="Logcat Errors will appear here...\n"
+            android:textColor="@android:color/holo_red_light"
+            android:textSize="14sp" />
     </ScrollView>
 
 </LinearLayout>

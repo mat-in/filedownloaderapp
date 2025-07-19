@@ -13,6 +13,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.matin.filedownloader.repo.FileDownloadRepository
+import io.matin.filedownloader.utils.ErrorLogCollector
 import io.matin.filedownloader.workers.DownloadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +24,10 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import java.util.UUID
 import javax.inject.Inject
+import java.net.ConnectException
+import java.net.UnknownHostException
+import java.net.NoRouteToHostException
+import java.io.IOException
 
 @HiltViewModel
 class FileViewModel @Inject constructor(
@@ -45,16 +50,24 @@ class FileViewModel @Inject constructor(
                 fileDownloadRepository.setBaseUrl(url)
             }
         }
-        // IMPORTANT: On ViewModel initialization, check for existing work
-        // This ensures the UI reflects ongoing downloads after app restart/process death
         checkExistingDownloads()
     }
 
     fun setBaseUrl(url: String) {
-        if (_baseUrl.value != url) { // Only update if it's actually different
+        if (_baseUrl.value != url) {
             _baseUrl.value = url
             Log.d("FileViewModel", "Base URL set to: $url (via setBaseUrl function)")
         }
+    }
+
+    // Define different types of errors
+    enum class ErrorType {
+        NETWORK_CONNECTION, // For ConnectException, UnknownHostException, NoRouteToHostException
+        SERVER_ERROR,       // For HTTP 5xx errors or backend processing errors
+        CLIENT_ERROR,       // For HTTP 4xx errors
+        NO_MORE_FILES,      // When backend explicitly says no more files (e.g., 204 or specific message)
+        GENERAL_ERROR,      // Catch-all for other unexpected errors
+        UNKNOWN             // Default/unclassified
     }
 
     sealed class DownloadStatus {
@@ -62,31 +75,24 @@ class FileViewModel @Inject constructor(
         object Loading : DownloadStatus()
         data class Progress(val percentage: Int) : DownloadStatus()
         data class Completed(val powerConsumptionAmps: Float?) : DownloadStatus()
-        data class Failed(val message: String?) : DownloadStatus()
+        data class Failed(val message: String?, val errorType: ErrorType = ErrorType.UNKNOWN) : DownloadStatus() // MODIFIED
         data class Enqueued(val workId: String) : DownloadStatus()
         object FetchingMetadata : DownloadStatus()
         data class MetadataFetched(val fileName: String, val fileLength: Long, val checkSum: String) : DownloadStatus()
         object AllDownloadsCompleted : DownloadStatus()
     }
 
-    /**
-     * Checks for any existing WorkManager downloads associated with our queue.
-     * Updates the UI status accordingly.
-     */
     private fun checkExistingDownloads() {
         viewModelScope.launch {
-            // Get all work info for our unique queue name
             val workInfos = workManager.getWorkInfosForUniqueWorkLiveData(DOWNLOAD_QUEUE_UNIQUE_WORK_NAME).asFlow()
             workInfos.collectLatest { infos ->
                 val activeWork = infos.firstOrNull { it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED }
 
                 if (activeWork != null) {
-                    // If there's active work, update the status and observe its progress
                     Log.d("FileViewModel", "Found existing active work: ${activeWork.id}, State: ${activeWork.state}")
                     _downloadStatus.value = DownloadStatus.Enqueued(activeWork.id.toString())
                     observeDownloadProgress(activeWork.id)
                 } else {
-                    // If no active work is found, and we weren't already completed/failed, go to Idle
                     if (_downloadStatus.value !is DownloadStatus.AllDownloadsCompleted &&
                         _downloadStatus.value !is DownloadStatus.Failed) {
                         _downloadStatus.value = DownloadStatus.Idle
@@ -96,20 +102,18 @@ class FileViewModel @Inject constructor(
         }
     }
 
-
     fun startBackendDrivenDownload() {
         viewModelScope.launch(Dispatchers.IO) {
-            // Check if URL is set
             if (_baseUrl.value.isBlank()) {
                 Log.e("FileViewModel", "Cannot start download: Base URL is not set.")
-                _downloadStatus.value = DownloadStatus.Failed("Backend URL not set. Please enter a URL.")
+                ErrorLogCollector.logError("FileViewModel", "Cannot start download: Base URL is not set.")
+                _downloadStatus.value = DownloadStatus.Failed("Backend URL not set. Please enter a URL.", ErrorType.CLIENT_ERROR) // More specific type
                 return@launch
             }
 
-            // Check if the queue is already active using WorkManager's unique work state
             val existingWorkStatus = workManager.getWorkInfosForUniqueWork(DOWNLOAD_QUEUE_UNIQUE_WORK_NAME).get()
             val isQueueAlreadyActive = existingWorkStatus.any {
-                it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED
+                it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED
             }
 
             if (!isQueueAlreadyActive) {
@@ -135,14 +139,34 @@ class FileViewModel @Inject constructor(
                 _downloadStatus.value = DownloadStatus.MetadataFetched(metadata.fileName, metadata.fileLength, metadata.checkSum)
                 enqueueFileDownloadWorker(metadata.fileName, metadata.fileLength, metadata.checkSum)
 
-            }.onFailure { throwable ->
-                val errorMessage = throwable.message
-                if (errorMessage != null && errorMessage.contains("No more files available")) {
-                    Log.d("FileViewModel", "All files downloaded.")
+            }.onFailure { exception ->
+                val errorMessage = exception.message ?: "Unknown error fetching metadata."
+                Log.e("FileViewModel", "Failed to fetch file metadata: $errorMessage", exception)
+                ErrorLogCollector.logError("FileViewModel", "Failed to fetch file metadata: $errorMessage", exception)
+
+                // Map the exception to a specific ErrorType
+                val errorType = when (exception) {
+                    is ConnectException, is UnknownHostException, is NoRouteToHostException -> ErrorType.NETWORK_CONNECTION
+                    is IOException -> {
+                        if (errorMessage.contains("No more files available", ignoreCase = true) ||
+                            errorMessage.contains("204 No Content", ignoreCase = true)) {
+                            ErrorType.NO_MORE_FILES
+                        } else if (errorMessage.contains("HTTP 5", ignoreCase = true)) {
+                            ErrorType.SERVER_ERROR
+                        } else if (errorMessage.contains("HTTP 4", ignoreCase = true)) {
+                            ErrorType.CLIENT_ERROR
+                        } else {
+                            ErrorType.GENERAL_ERROR
+                        }
+                    }
+                    else -> ErrorType.UNKNOWN
+                }
+
+                _downloadStatus.value = DownloadStatus.Failed(errorMessage, errorType) // MODIFIED
+
+                // Special handling for "No more files" to transition to AllDownloadsCompleted
+                if (errorType == ErrorType.NO_MORE_FILES) {
                     _downloadStatus.value = DownloadStatus.AllDownloadsCompleted
-                } else {
-                    Log.e("FileViewModel", "Failed to fetch file metadata: $errorMessage", throwable)
-                    _downloadStatus.value = DownloadStatus.Failed(errorMessage)
                 }
             }
         }
@@ -166,12 +190,12 @@ class FileViewModel @Inject constructor(
             .setInitialDelay(0, java.util.concurrent.TimeUnit.SECONDS)
             .addTag(fileName)
             .build()
+
         workManager.enqueueUniqueWork(
             DOWNLOAD_QUEUE_UNIQUE_WORK_NAME,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
             downloadRequest
         )
-
 
         _downloadStatus.value = DownloadStatus.Enqueued(downloadRequest.id.toString())
         observeDownloadProgress(downloadRequest.id)
@@ -201,12 +225,22 @@ class FileViewModel @Inject constructor(
                             fetchAndEnqueueNextFile()
                         }
                         WorkInfo.State.FAILED -> {
-                            val errorMessage = workInfo.outputData.getString("error_message")
-                            _downloadStatus.value = DownloadStatus.Failed(errorMessage)
+                            val errorMessage = workInfo.outputData.getString("error_message") ?: "Download failed due to unknown worker error."
+                            ErrorLogCollector.logError("FileViewModel", "Work failed: $errorMessage")
+
+                            val errorType = when {
+                                errorMessage.contains("Connection failed", ignoreCase = true) ||
+                                        errorMessage.contains("Unknown host", ignoreCase = true) ||
+                                        errorMessage.contains("No route to host", ignoreCase = true) -> ErrorType.NETWORK_CONNECTION
+                                errorMessage.contains("HTTP 5", ignoreCase = true) -> ErrorType.SERVER_ERROR
+                                errorMessage.contains("HTTP 4", ignoreCase = true) -> ErrorType.CLIENT_ERROR
+                                else -> ErrorType.GENERAL_ERROR
+                            }
+                            _downloadStatus.value = DownloadStatus.Failed(errorMessage, errorType)
                             workManager.cancelUniqueWork(DOWNLOAD_QUEUE_UNIQUE_WORK_NAME)
                         }
                         WorkInfo.State.CANCELLED -> {
-                            _downloadStatus.value = DownloadStatus.Failed("Download cancelled.")
+                            _downloadStatus.value = DownloadStatus.Failed("Download cancelled.", ErrorType.GENERAL_ERROR)
                             workManager.cancelUniqueWork(DOWNLOAD_QUEUE_UNIQUE_WORK_NAME)
                         }
                         WorkInfo.State.BLOCKED -> {
@@ -217,10 +251,6 @@ class FileViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Resets the download status to Idle and cancels any ongoing work for the queue.
-     * Call this when the user explicitly stops the process or if you want to clear the queue state.
-     */
     fun resetDownloadStatus() {
         _downloadStatus.value = DownloadStatus.Idle
         workManager.cancelUniqueWork(DOWNLOAD_QUEUE_UNIQUE_WORK_NAME)

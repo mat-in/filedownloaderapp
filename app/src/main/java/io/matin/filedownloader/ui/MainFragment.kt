@@ -72,12 +72,23 @@ class MainFragment : Fragment() {
             if (fileViewModel.downloadStatus.value is FileViewModel.DownloadStatus.Idle ||
                 fileViewModel.downloadStatus.value is FileViewModel.DownloadStatus.Failed ||
                 fileViewModel.downloadStatus.value is FileViewModel.DownloadStatus.AllDownloadsCompleted) {
-                // Let MainActivity handle permissions and initiate download
+                fileViewModel.setBaseUrl(urlEditText.text.toString().trim())
                 listener?.onNotificationPermissionNeeded()
             } else {
                 Toast.makeText(context, "Download already in progress or enqueued.", Toast.LENGTH_SHORT).show()
             }
         }
+
+        lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                fileViewModel.baseUrl.collect { url ->
+                    if (urlEditText.text.toString().trim() != url) {
+                        urlEditText.setText(url)
+                    }
+                }
+            }
+        }
+
 
         lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -108,8 +119,18 @@ class MainFragment : Fragment() {
                             updateStorageInfo()
                         }
                         is FileViewModel.DownloadStatus.Failed -> {
-                            statusTextView.text = "Download failed: ${status.message ?: "Unknown error"}"
-                            Log.e("MainFragment", "Download failed: ${status.message ?: "Unknown error"}")
+                            val displayMessage = when (status.errorType) {
+                                FileViewModel.ErrorType.NETWORK_CONNECTION -> "Connection failed: Server unreachable or incorrect URL."
+                                FileViewModel.ErrorType.SERVER_ERROR -> "Server error (HTTP 5xx): Please check backend logs."
+                                FileViewModel.ErrorType.CLIENT_ERROR -> "Client error (HTTP 4xx): Invalid request or URL issue."
+                                FileViewModel.ErrorType.NO_MORE_FILES -> "All files downloaded, or no more files available."
+                                FileViewModel.ErrorType.GENERAL_ERROR -> "Download failed due to an unexpected error."
+                                FileViewModel.ErrorType.UNKNOWN -> "Download failed: Unknown reason."
+                            } + " Details: ${status.message ?: "No details provided."}"
+
+                            statusTextView.text = "Download failed: $displayMessage"
+                            ErrorLogCollector.logError("Downlaod Failed: ", displayMessage) //this is shown in the logcat textview
+                            Log.e("MainFragment", "Download failed: $displayMessage")
                             downloadButton.isEnabled = true
                             urlEditText.isEnabled = true
                         }
@@ -151,7 +172,7 @@ class MainFragment : Fragment() {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        _binding = null // Clean up binding
+        _binding = null
     }
 
     fun getEnteredUrl(): String {

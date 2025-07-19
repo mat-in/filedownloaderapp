@@ -23,6 +23,7 @@ import io.matin.filedownloader.notifications.DownloadNotificationManager
 import io.matin.filedownloader.repo.FileDownloadRepository
 import io.matin.filedownloader.repo.encodeURLParameter
 import io.matin.filedownloader.utils.ChecksumUtils
+import io.matin.filedownloader.utils.ErrorLogCollector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -164,12 +165,14 @@ class DownloadWorker(
             val response = fileDownloadRepository.downloadFileFromBackend(fileName, startByte)
 
             if (!response.isSuccessful) {
+                ErrorLogCollector.logError("res", "unsucessful response")
                 if (response.code == 416 && startByte > 0) {
                     Log.d(TAG, "Received 416 (Range Not Satisfiable) for $fileName. Assuming file is already complete on client side.")
                     downloadSuccess = true
                 } else {
                     val errorMessage = "Download failed: HTTP ${response.code} ${response.message}"
                     Log.e(TAG, errorMessage)
+
                     notificationManager.showDownloadFailed(fileName, errorMessage)
                     return Result.failure(workDataOf("error_message" to errorMessage))
                 }
@@ -201,6 +204,7 @@ class DownloadWorker(
                 }
                 Log.d(TAG, "Temporary download to ${tempDownloadFile.absolutePath} completed for $fileName.")
                 downloadSuccess = true
+                ErrorLogCollector.logError("downloadworker", "temp file createdhttp:/ 192.168.1.8")
             }
 
             if (downloadSuccess) {

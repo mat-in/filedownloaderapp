@@ -11,7 +11,10 @@ import com.google.gson.Gson
 import io.matin.filedownloader.data.DownloadMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicReference // For thread-safe URL updates
+import java.util.concurrent.atomic.AtomicReference
+import java.net.ConnectException
+import java.net.UnknownHostException
+import java.net.NoRouteToHostException
 
 @Singleton
 class FileDownloadRepository @Inject constructor(
@@ -31,8 +34,6 @@ class FileDownloadRepository @Inject constructor(
     private fun getBaseUrl(): String {
         val url = _baseUrl.get()
         if (url.isNullOrBlank()) {
-            // This case should ideally not happen if setBaseUrl is called correctly
-            // before any network operations.
             throw IllegalStateException("Base URL is not set in FileDownloadRepository. Call setBaseUrl() first.")
         }
         return url
@@ -74,8 +75,15 @@ class FileDownloadRepository @Inject constructor(
                 Result.failure(IOException(errorMessage))
             }
         } catch (e: Exception) {
-            Log.e("FileDownloadRepo", "Error fetching next file metadata: ${e.message}", e)
-            Result.failure(e)
+            val specificErrorMessage = when (e) {
+                is ConnectException -> "Connection failed: Check server address or network connection."
+                is UnknownHostException -> "Unknown host: Check server address or DNS settings."
+                is NoRouteToHostException -> "No route to host: Server unreachable."
+                is IOException -> "Network error during metadata fetch: ${e.message}"
+                else -> "An unexpected error occurred during metadata fetch: ${e.message}"
+            }
+            Log.e("FileDownloadRepo", specificErrorMessage, e)
+            Result.failure(IOException(specificErrorMessage, e))
         }
     }
 
@@ -101,7 +109,19 @@ class FileDownloadRepository @Inject constructor(
         val request = requestBuilder.build()
 
         return withContext(Dispatchers.IO) {
-            okHttpClient.newCall(request).execute()
+            try {
+                okHttpClient.newCall(request).execute()
+            } catch (e: Exception) {
+                val specificErrorMessage = when (e) {
+                    is ConnectException -> "Connection failed for file download: Check server address or network connection."
+                    is UnknownHostException -> "Unknown host for file download: Check server address or DNS settings."
+                    is NoRouteToHostException -> "No route to host for file download: Server unreachable."
+                    is IOException -> "Network error during file download: ${e.message}"
+                    else -> "An unexpected error occurred during file download: ${e.message}"
+                }
+                Log.e("FileDownloadRepo", specificErrorMessage, e)
+                throw IOException(specificErrorMessage, e)
+            }
         }
     }
 
@@ -132,8 +152,15 @@ class FileDownloadRepository @Inject constructor(
                 Result.failure(IOException(errorMessage))
             }
         } catch (e: Exception) {
-            Log.e("FileDownloadRepo", "Error reporting download success for $fileName: ${e.message}", e)
-            Result.failure(e)
+            val specificErrorMessage = when (e) {
+                is ConnectException -> "Connection failed for success report: Check server address or network connection."
+                is UnknownHostException -> "Unknown host for success report: Check server address or DNS settings."
+                is NoRouteToHostException -> "No route to host for success report: Server unreachable."
+                is IOException -> "Network error during success report: ${e.message}"
+                else -> "An unexpected error occurred during success report: ${e.message}"
+            }
+            Log.e("FileDownloadRepo", specificErrorMessage, e)
+            Result.failure(IOException(specificErrorMessage, e))
         }
     }
 }
