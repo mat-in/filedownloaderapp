@@ -208,9 +208,6 @@ class DownloadWorker(
             }
 
             if (downloadSuccess) {
-                // Remove finalBatteryCurrentMicroAmps and calculation logic
-                // powerConsumptionAmps will now store the instantaneous reading taken at the start
-                // or remain null if it couldn't be read.
                 Log.d(TAG, "Power consumption logged as instantaneous current at start: ${instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f)} Amps (raw microamps: $instantaneousBatteryCurrentMicroAmps)")
 
 
