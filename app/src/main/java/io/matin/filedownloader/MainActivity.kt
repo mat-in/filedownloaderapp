@@ -1,3 +1,4 @@
+// io.matin.filedownloader.MainActivity.kt
 package io.matin.filedownloader
 
 import android.Manifest
@@ -32,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @AndroidEntryPoint
-class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListener, MainFragment.MainFragmentListener {
+class MainActivity : AppCompatActivity(), MainFragment.MainFragmentListener {
 
     private val fileViewModel: FileViewModel by viewModels()
 
@@ -74,7 +75,7 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         setContentView(R.layout.activity_main)
 
         setSupportActionBar(findViewById(R.id.toolbar))
-        supportActionBar?.setTitle("File Downloader") // Set initial title
+        supportActionBar?.setTitle("File Downloader")
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -82,21 +83,22 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
             insets
         }
 
-        // Load MainFragment initially if no fragment is already present (e.g., after rotation)
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.fragment_container, MainFragment(), "MainFragmentTag")
                 .commit()
         }
 
-        // Persistent listener for back stack changes to update toolbar
         supportFragmentManager.addOnBackStackChangedListener {
             updateToolbarBasedOnFragment()
         }
 
-        batteryInfoReceiver = BatteryInfoReceiver(this)
+        // Initialize and register BatteryInfoReceiver
+        batteryInfoReceiver = BatteryInfoReceiver()
         val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
         registerReceiver(batteryInfoReceiver, batteryFilter)
+        Log.d("MainActivity", "BatteryInfoReceiver registered.")
+
 
         wifiScanReceiver = WifiScanReceiver()
         val wifiFilter = IntentFilter().apply {
@@ -127,8 +129,8 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                 }
                 return true
             }
-            android.R.id.home -> { // Handle the Up button (back button in toolbar)
-                onBackPressedDispatcher.onBackPressed() // Use onBackPressedDispatcher for modern Android
+            android.R.id.home -> {
+                onBackPressedDispatcher.onBackPressed()
                 return true
             }
             else -> super.onOptionsItemSelected(item)
@@ -136,22 +138,20 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         return true
     }
 
-    // Helper function to show a fragment
     private fun showFragment(fragment: Fragment, title: String) {
         supportFragmentManager.beginTransaction()
             .replace(R.id.fragment_container, fragment)
-            .addToBackStack(null) // Allows going back to previous fragment/MainFragment
+            .addToBackStack(null)
             .commit()
-        // Toolbar update will be handled by the onBackStackChangedListener
     }
 
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(batteryInfoReceiver)
+        Log.d("MainActivity", "BatteryInfoReceiver unregistered.")
         unregisterReceiver(wifiScanReceiver)
     }
 
-    // --- MainFragmentListener implementations ---
 
     override fun onDownloadInitiated(url: String) {
         lifecycleScope.launch { initiateDownloadProcess(url) }
@@ -224,19 +224,14 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
         }
     }
 
-    override fun onBatteryInfoUpdated(percentage: Int, isCharging: Boolean) {
-        Log.d("MainActivity", "Battery update received (via receiver): $percentage%, Charging: $isCharging")
-    }
-
     override fun onBackPressed() {
         if (supportFragmentManager.backStackEntryCount > 0) {
             supportFragmentManager.popBackStack()
         } else {
-            super.onBackPressed() // Let system handle (exit app) if no fragments on stack
+            super.onBackPressed()
         }
     }
 
-    // New method to update toolbar based on current fragment
     private fun updateToolbarBasedOnFragment() {
         val currentFragment = supportFragmentManager.findFragmentById(R.id.fragment_container)
 
@@ -254,7 +249,6 @@ class MainActivity : AppCompatActivity(), BatteryInfoReceiver.BatteryUpdateListe
                 supportActionBar?.title = "Wi-Fi Information"
             }
             else -> {
-                // Fallback for unexpected states, e.g., if no fragment is attached
                 supportActionBar?.setDisplayHomeAsUpEnabled(false)
                 supportActionBar?.title = "File Downloader"
             }

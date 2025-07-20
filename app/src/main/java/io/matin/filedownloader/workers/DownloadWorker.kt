@@ -50,7 +50,7 @@ class DownloadWorker(
         const val KEY_FILE_NAME = "file_name"
         const val KEY_FILE_LENGTH = "file_length"
         const val KEY_CHECKSUM = "checkSum"
-        const val KEY_POWER_CONSUMPTION_AMPS = "power_consumption_amps" // This will now store raw current_now
+        const val KEY_POWER_CONSUMPTION_AMPS = "power_consumption_amps"
         const val KEY_BASE_URL = "base_url"
         private const val TAG = "DownloadWorker"
     }
@@ -117,7 +117,6 @@ class DownloadWorker(
         val batteryManager = applicationContext.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
 
         try {
-            // Only capture current_now at the start of the download for logging
             instantaneousBatteryCurrentMicroAmps = batteryManager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
             Log.d(TAG, "Instantaneous Battery Current (Start): ${instantaneousBatteryCurrentMicroAmps / 1000.0f} mA")
         } catch (e: SecurityException) {
@@ -165,7 +164,7 @@ class DownloadWorker(
             val response = fileDownloadRepository.downloadFileFromBackend(fileName, startByte)
 
             if (!response.isSuccessful) {
-                ErrorLogCollector.logError("res", "unsucessful response")
+                ErrorLogCollector.logError("res", "unsuccessful response")
                 if (response.code == 416 && startByte > 0) {
                     Log.d(TAG, "Received 416 (Range Not Satisfiable) for $fileName. Assuming file is already complete on client side.")
                     downloadSuccess = true
@@ -204,12 +203,11 @@ class DownloadWorker(
                 }
                 Log.d(TAG, "Temporary download to ${tempDownloadFile.absolutePath} completed for $fileName.")
                 downloadSuccess = true
-                ErrorLogCollector.logError("downloadworker", "temp file createdhttp:/ 192.168.1.8")
+                ErrorLogCollector.logError("downloadworker", "temp file created")
             }
 
             if (downloadSuccess) {
                 Log.d(TAG, "Power consumption logged as instantaneous current at start: ${instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f)} Amps (raw microamps: $instantaneousBatteryCurrentMicroAmps)")
-
 
                 if (!checkSum.isNullOrBlank()) {
                     try {
@@ -269,27 +267,36 @@ class DownloadWorker(
                     }
                     Log.d(TAG, "Download metrics saved to DB: $downloadEntry")
 
-                    // --- New Battery Log Saving ---
                     val batteryStatus: Intent? = applicationContext.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
                     val level: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                     val scale: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-                    val currentBatteryPercentage: Int = if (scale > 0) (level * 100 / scale.toFloat()).toInt() else 0
+                    val currentBatteryPercentage: Float = if (scale > 0) (level * 100 / scale.toFloat()) else 0.0f
 
                     val status: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
                     val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
 
+                    val pluggedStatus: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
+                    val healthStatus: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_HEALTH, -1) ?: -1
+                    val voltage: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
+                    val temperature: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+                    val technology: String? = batteryStatus?.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY)
+
                     val batteryLogEntry = BatteryLogEntry(
-                        downloadId = insertedDownloadId,
                         batteryPercentage = currentBatteryPercentage,
                         isCharging = isCharging,
-                        powerConsumptionAmps = instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f) // Store as Amps or null
+                        chargingStatus = status,
+                        pluggedStatus = pluggedStatus,
+                        healthStatus = healthStatus,
+                        voltage = voltage,
+                        temperature = temperature,
+                        technology = technology,
+                        powerConsumptionAmps = instantaneousBatteryCurrentMicroAmps?.div(1_000_000.0f)
                     )
                     withContext(Dispatchers.IO) {
                         batteryLogDao.insertBatteryLog(batteryLogEntry)
                     }
                     Log.d(TAG, "Battery metrics saved to DB: $batteryLogEntry")
-                    // --- End New Battery Log Saving ---
-
 
                     val successResult = fileDownloadRepository.sendDownloadSuccess(fileName)
                     successResult.onSuccess { msg ->

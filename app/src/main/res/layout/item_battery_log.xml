@@ -1,57 +1,90 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingStart="8dp"
-    android:paddingEnd="8dp"
-    android:paddingTop="4dp"
-    android:paddingBottom="4dp">
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:layout_marginBottom="8dp"
+    android:background="?android:attr/selectableItemBackground"
+    android:id="@+id/item_battery_log_root">
 
     <TextView
         android:id="@+id/timestamp_text_view"
-        android:layout_width="0dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
         android:textStyle="bold"
-        app:layout_constraintEnd_toStartOf="@+id/battery_percent_text_view"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:text="2025-07-16 11:00:00" />
+        android:textSize="14sp"
+        android:textColor="@android:color/black"
+        android:text="Timestamp: 2025-07-17 10:30:00" />
 
     <TextView
         android:id="@+id/battery_percent_text_view"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        app:layout_constraintEnd_toStartOf="@+id/charging_status_text_view"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toEndOf="@+id/timestamp_text_view"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:text="85%" />
+        android:textSize="14sp"
+        android:textColor="@android:color/black"
+        android:text="Battery: 85%" />
 
     <TextView
         android:id="@+id/charging_status_text_view"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        app:layout_constraintEnd_toStartOf="@+id/power_consumption_text_view"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toEndOf="@+id/battery_percent_text_view"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:text="Charging" />
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Charging: Yes (Status: Charging)" />
 
     <TextView
         android:id="@+id/power_consumption_text_view"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintStart_toEndOf="@+id/charging_status_text_view"
-        app:layout_constraintTop_toTopOf="parent"
-        tools:text="0.05 A" />
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Power: 0.5 A" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+    <TextView
+        android:id="@+id/voltage_text_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Voltage: 3800 mV" />
+
+    <TextView
+        android:id="@+id/temperature_text_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Temp: 30.5 °C" />
+
+    <TextView
+        android:id="@+id/health_status_text_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Health: Good" />
+
+    <TextView
+        android:id="@+id/plugged_status_text_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Plugged: USB" />
+
+    <TextView
+        android:id="@+id/technology_text_view"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        android:textColor="@android:color/darker_gray"
+        android:text="Tech: Li-ion" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="8dp"
+        android:background="@android:color/darker_gray" />
+
+</LinearLayout>

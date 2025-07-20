@@ -60,7 +60,6 @@ class FileViewModel @Inject constructor(
         }
     }
 
-    // Define different types of errors
     enum class ErrorType {
         NETWORK_CONNECTION, // For ConnectException, UnknownHostException, NoRouteToHostException
         SERVER_ERROR,       // For HTTP 5xx errors or backend processing errors

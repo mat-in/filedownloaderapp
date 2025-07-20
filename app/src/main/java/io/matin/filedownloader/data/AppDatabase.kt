@@ -1,4 +1,3 @@
-// Example AppDatabase.kt (if you don't have it set up this way)
 package io.matin.filedownloader.data
 
 import android.content.Context
@@ -6,10 +5,10 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [WifiLogEntry::class, BatteryLogEntry::class, DownloadEntry::class], version = 1, exportSchema = false)
+@Database(entities = [WifiLogEntry::class, BatteryLogEntry::class, DownloadEntry::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun wifiLogDao(): WifiLogDao
-    abstract fun downloadDao(): DownloadDao // <-- This must exist
+    abstract fun downloadDao(): DownloadDao
     abstract fun batteryLogDao(): BatteryLogDao
 
     companion object {
@@ -22,7 +21,8 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "file_downloader_database"
-                ).build()
+                ).fallbackToDestructiveMigration(true)
+                    .build()
                 INSTANCE = instance
                 instance
             }

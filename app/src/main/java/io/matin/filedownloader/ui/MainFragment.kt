@@ -129,7 +129,7 @@ class MainFragment : Fragment() {
                             } + " Details: ${status.message ?: "No details provided."}"
 
                             statusTextView.text = "Download failed: $displayMessage"
-                            ErrorLogCollector.logError("Downlaod Failed: ", displayMessage) //this is shown in the logcat textview
+                            ErrorLogCollector.logError("Downlaod Failed: ", displayMessage)
                             Log.e("MainFragment", "Download failed: $displayMessage")
                             downloadButton.isEnabled = true
                             urlEditText.isEnabled = true
